@@ -18,6 +18,7 @@ import {
   Tag,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import logo from '../../assets/logo_sin_nombre.png';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -132,8 +133,10 @@ export function Sidebar({ isOpen }: SidebarProps) {
     >
       <div className="flex flex-col h-full">
         <div className="p-6 flex items-center gap-3 border-b border-gray-800">
-          <div className="p-2 bg-blue-600 rounded-lg flex-shrink-0">
-            <Fish className="w-6 h-6 text-white" />
+          <div className="flex-shrink-0">
+            <img
+              src={logo} alt="Incomar" className="w-16 h-16 object-contain"
+            />
           </div>
           {isOpen && (
             <div>

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
-import { Fish, Lock, Mail } from 'lucide-react';
+import { Lock, Mail } from 'lucide-react';
+import logo from "../../assets/logo_sin_nombre.png";
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
@@ -25,12 +26,12 @@ export function LoginPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-xl mb-4">
-            <Fish className="w-8 h-8 text-white" />
+        <div className="text-center mb-6">
+          <div className="flex justify-center">
+            <img src={logo} alt="Incomar" className="size-28"/>
           </div>
-          <h1 className="text-gray-900 mb-2">INCOMAR</h1>
-          <p className="text-gray-600">Sistema de Trazabilidad y Gestión Pesquera</p>
+            <h1 className='text-gray-950'>Incomar</h1>
+            <p className="text-gray-600">Sistema de Trazabilidad y Gestión Pesquera</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
