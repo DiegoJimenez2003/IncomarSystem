@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Search, Plus, ClipboardCheck, CheckCircle, XCircle, AlertCircle, Tag } from 'lucide-react';
 import { calidadData, estadosProductoData, lotesData } from '../data/incomarData';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../../utils/supabase'
 
 export function CalidadPage() {
   const { user } = useAuth();

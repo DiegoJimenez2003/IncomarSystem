@@ -1,90 +1,122 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from 'react';
 
-export type UserRole = 'administrador' | 'supervisor' | 'calidad' | 'secretaria';
+import { supabase } from '../../utils/supabase';
+
+export type UserRole =
+  | 'administrador'
+  | 'supervisor'
+  | 'calidad'
+  | 'secretaria';
 
 export interface User {
   id: string;
   nombre: string;
   email: string;
-  rol: UserRole;
+  rol?: UserRole;
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => boolean;
-  logout: () => void;
+  logout: () => Promise<void>;
   isAuthenticated: boolean;
+  loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const mockUsers: Array<User & { password: string }> = [
-  {
-    id: '1',
-    nombre: 'Carlos Administrador',
-    email: 'admin@incomar.cl',
-    password: 'admin123',
-    rol: 'administrador',
-  },
-  {
-    id: '2',
-    nombre: 'Juan Supervisor',
-    email: 'supervisor@incomar.cl',
-    password: 'super123',
-    rol: 'supervisor',
-  },
-  {
-    id: '3',
-    nombre: 'María Calidad',
-    email: 'calidad@incomar.cl',
-    password: 'calidad123',
-    rol: 'calidad',
-  },
-  {
-    id: '4',
-    nombre: 'Ana Secretaria',
-    email: 'secretaria@incomar.cl',
-    password: 'secre123',
-    rol: 'secretaria',
-  },
-];
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('currentUser');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
+    obtenerSesion();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        obtenerUsuario(session.user.id);
+      } else {
+        setUser(null);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const login = (email: string, password: string): boolean => {
-    const foundUser = mockUsers.find(
-      (u) => u.email === email && u.password === password
-    );
+  async function obtenerUsuario(authId: string) {
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select(`
+        id,
+        nombre,
+        email,
+        rol_id,
+        roles (
+        nombre
+        )
+      `)
+      .eq('auth_id', authId)
+      .maybeSingle();
 
-    if (foundUser) {
-      const { password: _, ...userWithoutPassword } = foundUser;
-      setUser(userWithoutPassword);
-      localStorage.setItem('currentUser', JSON.stringify(userWithoutPassword));
-      return true;
+    console.log('USUARIO:', data);
+    console.log('ERROR:', error);
+
+    if (error) {
+      console.error('Error obteniendo usuario:', error);
+      return;
     }
-    return false;
-  };
 
-  const logout = () => {
+    if (!data) {
+      console.error('No existe usuario en tabla usuarios');
+      return;
+    }
+
+    setUser({
+        id: data.id,
+        nombre: data.nombre,
+        email: data.email,
+        rol: Array.isArray(data.roles)
+          ? data.roles[0]?.nombre as UserRole
+          : (data.roles as any)?.nombre as UserRole,
+      });
+
+    setLoading(false);
+  }
+
+  async function obtenerSesion() {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (session?.user) {
+      await obtenerUsuario(session.user.id);
+    } else {
+      setLoading(false);
+    }
+  }
+
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('currentUser');
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        login,
         logout,
         isAuthenticated: !!user,
+        loading,
       }}
     >
       {children}
@@ -94,8 +126,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
+
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
+
   return context;
 }

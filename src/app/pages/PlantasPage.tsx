@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Search, Plus, Building2, MapPin } from 'lucide-react';
 import { plantasData } from '../data/incomarData';
+import { supabase } from '../../utils/supabase'
 
 export function PlantasPage() {
   const [searchTerm, setSearchTerm] = useState('');

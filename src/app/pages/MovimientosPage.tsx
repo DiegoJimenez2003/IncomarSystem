@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, Search, Filter, Info } from 'lucide-react';
 import { movimientosData } from '../data/incomarData';
+import { supabase } from '../../utils/supabase'
 
 export function MovimientosPage() {
   const [filtroTipo, setFiltroTipo] = useState<string>('todos');

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Search, User, Mail, Phone, Briefcase } from 'lucide-react';
 import { empleadosData } from '../data/mockData';
+import { supabase } from '../../utils/supabase'
 
 export function EmpleadosPage() {
   const [searchTerm, setSearchTerm] = useState('');

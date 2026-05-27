@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Search, Plus, Edit2, Trash2, X, Tag } from 'lucide-react';
 import { estadosProductoData } from '../data/incomarData';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../../utils/supabase'
 
 export function EstadosProductoPage() {
   const { user } = useAuth();

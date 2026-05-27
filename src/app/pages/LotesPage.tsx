@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Search, Plus, Eye, Edit2, PackageCheck } from 'lucide-react';
 import { lotesData } from '../data/incomarData';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../../utils/supabase'
 
 export function LotesPage() {
   const { user } = useAuth();

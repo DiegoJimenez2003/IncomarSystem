@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Search, Plus, Warehouse, AlertCircle } from 'lucide-react';
 import { racksData } from '../data/incomarData';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../../utils/supabase'
 
 export function RacksPage() {
   const { user } = useAuth();

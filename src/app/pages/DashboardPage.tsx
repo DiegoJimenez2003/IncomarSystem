@@ -15,6 +15,7 @@ import {
   movimientosData,
 } from '../data/incomarData';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { supabase } from '../../utils/supabase'
 
 export function DashboardPage() {
   const lotesActivos = lotesData.filter(

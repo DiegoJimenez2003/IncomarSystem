@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Search, Plus, Fish } from 'lucide-react';
 import { productosData } from '../data/incomarData';
+import { supabase } from '../../utils/supabase'
 
 export function ProductosPage() {
   const [searchTerm, setSearchTerm] = useState('');

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Search, Plus, Ship, Edit2, Trash2 } from 'lucide-react';
 import { embarquesData } from '../data/incomarData';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../../utils/supabase'
 
 export function EmbarquesPage() {
   const { user } = useAuth();

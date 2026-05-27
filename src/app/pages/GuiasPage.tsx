@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Search, Plus, FileSignature, Edit2, Trash2 } from 'lucide-react';
 import { guiasData } from '../data/incomarData';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../../utils/supabase'
 
 export function GuiasPage() {
   const { user } = useAuth();

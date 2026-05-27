@@ -10,6 +10,7 @@ import {
   embarquesData,
   estadosProductoData,
 } from '../data/incomarData';
+import { supabase } from '../../utils/supabase'
 
 export function TrazabilidadPage() {
   const [loteSeleccionado, setLoteSeleccionado] = useState<string | null>(null);

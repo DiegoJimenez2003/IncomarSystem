@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Search, Package, Warehouse } from 'lucide-react';
 import { inventarioData, racksData } from '../data/incomarData';
+import { supabase } from '../../utils/supabase'
 
 export function InventarioPage() {
   const [searchTerm, setSearchTerm] = useState('');

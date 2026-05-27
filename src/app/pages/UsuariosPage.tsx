@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Search, Plus, User, Mail, Shield } from 'lucide-react';
+import { supabase } from '../../utils/supabase'
 
 interface Usuario {
   id: string;

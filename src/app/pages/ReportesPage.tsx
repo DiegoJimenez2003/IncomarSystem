@@ -6,6 +6,7 @@ import {
   procesosData,
 } from '../data/incomarData';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { supabase } from '../../utils/supabase'
 
 export function ReportesPage() {
   const generateReport = (tipo: string) => {

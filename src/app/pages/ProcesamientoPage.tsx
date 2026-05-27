@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Search, Plus, Factory, TrendingUp } from 'lucide-react';
 import { procesosData } from '../data/incomarData';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../../utils/supabase'
 
 export function ProcesamientoPage() {
   const { user } = useAuth();
