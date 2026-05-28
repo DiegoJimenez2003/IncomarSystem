@@ -50,19 +50,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function obtenerUsuario(authId: string) {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+  .from('usuarios')
+  .select(`
+    id,
+    nombre,
+    email,
+    roles(nombre)
+  `)
+  .eq('auth_id', authId)
+  .maybeSingle();
 
-  console.log('AUTH USER:', user);
+  console.log('USUARIO:', data);
+  console.log('ERROR:', error);
 
-  if (!user) return;
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  if (!data) {
+    console.error('No existe usuario');
+    return;
+  }
 
   setUser({
-    id: user.id,
-    nombre: user.email || 'Usuario',
-    email: user.email || '',
-  });
+    id: data.id,
+    nombre: data.nombre,
+    email: data.email,
+    rol: (data.roles as any)?.nombre as UserRole,
+    });
 }
 
   async function obtenerSesion() {

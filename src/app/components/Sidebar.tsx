@@ -25,88 +25,112 @@ interface SidebarProps {
   onToggle: () => void;
 }
 
+interface NavItem {
+  name: string;
+  path: string;
+  icon: any;
+  roles: string[];
+}
+
 export function Sidebar({ isOpen }: SidebarProps) {
   const { user } = useAuth();
 
-  const navItems = [
+  const navItems: NavItem[] = [
     {
       name: 'Dashboard',
       path: '/dashboard',
       icon: LayoutDashboard,
+      roles: ['administrador', 'supervisor', 'calidad', 'secretaria'],
     },
     {
       name: 'Lotes',
       path: '/lotes',
       icon: PackageCheck,
+      roles: ['administrador', 'supervisor', 'calidad', 'secretaria'],
     },
     {
       name: 'Guías',
       path: '/guias',
       icon: FileSignature,
+      roles: ['administrador', 'supervisor', 'secretaria'],
     },
     {
       name: 'Procesamiento',
       path: '/procesamiento',
       icon: Factory,
+      roles: ['administrador', 'supervisor'],
     },
     {
       name: 'Inventario',
       path: '/inventario',
       icon: Package,
+      roles: ['administrador', 'supervisor', 'secretaria'],
     },
     {
       name: 'Racks',
       path: '/racks',
       icon: Warehouse,
+      roles: ['administrador', 'supervisor'],
     },
     {
       name: 'Movimientos',
       path: '/movimientos',
       icon: ArrowRightLeft,
+      roles: ['administrador', 'supervisor'],
     },
     {
       name: 'Control Calidad',
       path: '/calidad',
       icon: ClipboardCheck,
+      roles: ['administrador', 'calidad'],
     },
     {
       name: 'Estados Producto',
       path: '/estados',
       icon: Tag,
+      roles: ['administrador', 'calidad'],
     },
     {
       name: 'Embarques',
       path: '/embarques',
       icon: Ship,
+      roles: ['administrador', 'supervisor', 'secretaria'],
     },
     {
       name: 'Trazabilidad',
       path: '/trazabilidad',
       icon: Route,
+      roles: ['administrador', 'supervisor', 'calidad', 'secretaria'],
     },
     {
       name: 'Reportes',
       path: '/reportes',
       icon: FileText,
+      roles: ['administrador', 'supervisor'],
     },
     {
       name: 'Productos',
       path: '/productos',
       icon: Fish,
+      roles: ['administrador'],
     },
     {
       name: 'Plantas',
       path: '/plantas',
       icon: Building2,
+      roles: ['administrador'],
     },
     {
       name: 'Usuarios',
       path: '/usuarios',
       icon: Users,
+      roles: ['administrador'],
     },
   ];
 
-  const filteredNavItems = navItems;
+  const filteredNavItems = navItems.filter((item) =>
+    item.roles.includes(user?.rol || '')
+  );
 
   return (
     <aside
@@ -115,7 +139,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
       } overflow-hidden border-r border-gray-800`}
     >
       <div className="flex flex-col h-full">
-        
+
         <div className="p-6 flex items-center gap-3 border-b border-gray-800">
           <div className="flex-shrink-0">
             <img
@@ -171,7 +195,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
 
         {isOpen && (
           <div className="p-4 border-t border-gray-800">
-            
+
             <div className="mb-2">
               <p className="text-sm text-white font-medium">
                 {user?.nombre}
