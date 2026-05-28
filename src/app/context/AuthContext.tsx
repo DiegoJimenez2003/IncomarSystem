@@ -24,15 +24,12 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   logout: () => Promise<void>;
-  isAuthenticated: boolean;
-  loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     obtenerSesion();
@@ -44,7 +41,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         obtenerUsuario(session.user.id);
       } else {
         setUser(null);
-        setLoading(false);
       }
     });
 
@@ -54,44 +50,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function obtenerUsuario(authId: string) {
-    const { data, error } = await supabase
-      .from('usuarios')
-      .select(`
-        id,
-        nombre,
-        email,
-        rol_id,
-        roles (
-        nombre
-        )
-      `)
-      .eq('auth_id', authId)
-      .maybeSingle();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-    console.log('USUARIO:', data);
-    console.log('ERROR:', error);
+  console.log('AUTH USER:', user);
 
-    if (error) {
-      console.error('Error obteniendo usuario:', error);
-      return;
-    }
+  if (!user) return;
 
-    if (!data) {
-      console.error('No existe usuario en tabla usuarios');
-      return;
-    }
-
-    setUser({
-        id: data.id,
-        nombre: data.nombre,
-        email: data.email,
-        rol: Array.isArray(data.roles)
-          ? data.roles[0]?.nombre as UserRole
-          : (data.roles as any)?.nombre as UserRole,
-      });
-
-    setLoading(false);
-  }
+  setUser({
+    id: user.id,
+    nombre: user.email || 'Usuario',
+    email: user.email || '',
+  });
+}
 
   async function obtenerSesion() {
     const {
@@ -100,8 +72,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (session?.user) {
       await obtenerUsuario(session.user.id);
-    } else {
-      setLoading(false);
     }
   }
 
@@ -115,8 +85,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         logout,
-        isAuthenticated: !!user,
-        loading,
       }}
     >
       {children}

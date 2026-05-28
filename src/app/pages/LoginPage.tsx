@@ -1,18 +1,28 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Navigate } from 'react-router';
 import { Lock, Mail } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import logo from "../../assets/logo_sin_nombre.png";
 import { supabase } from '../../utils/supabase';
 
 export function LoginPage() {
-  const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+
+
+  // Si ya está autenticado → dashboard
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  const handleSubmit = async (
+    e: React.FormEvent<HTMLFormElement>
+  ) => {
     e.preventDefault();
 
     setError('');
@@ -23,20 +33,20 @@ export function LoginPage() {
       password,
     });
 
-    setLoading(false);
-
     if (error) {
       setError('Correo o contraseña incorrectos');
+      setLoading(false);
       return;
     }
 
-    navigate('/dashboard');
+    // Forzar recarga completa para que AuthContext se actualice correctamente
+    window.location.href = '/dashboard';
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
-        
+
         <div className="text-center mb-6">
           <div className="flex justify-center">
             <img
@@ -56,7 +66,7 @@ export function LoginPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          
+
           <div>
             <label className="block text-gray-700 mb-2">
               Correo Electrónico
