@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Search, Plus, Fish } from 'lucide-react';
 import { supabase } from '../../utils/supabase';
+import { ProductoModal } from '../components/Productos/ProductoModal';
+import { EspeciesModal } from '../components/Productos/EspeciesModal';
 
 // ==========================================================
 // Modelo de producto mostrado en la interfaz
@@ -32,6 +34,23 @@ export function ProductosPage() {
   const [loading, setLoading] = useState(true);
 
   // ==========================================================
+  // Estado del modal
+  // ==========================================================
+  const [mostrarModal, setMostrarModal] = useState(false);
+
+  // ==========================================================
+  // Estado del modal especies
+  // ==========================================================
+  const [mostrarModalEspecies, setMostrarModalEspecies] =
+  useState(false);
+
+  // ==========================================================
+  // Producto seleccionado para editar
+  // ==========================================================
+  const [productoEditar, setProductoEditar] =
+    useState<Producto | null>(null);
+
+  // ==========================================================
   // Cargar productos al iniciar la página
   // ==========================================================
   useEffect(() => {
@@ -58,17 +77,10 @@ export function ProductosPage() {
         return;
       }
 
-      // ==========================================================
-      // Construir lista final de productos con información
-      // legible para el usuario
-      // ==========================================================
       const productosConNombre: Producto[] = [];
 
       for (const producto of data ?? []) {
 
-        // ==========================================================
-        // Buscar información de la especie relacionada
-        // ==========================================================
         const { data: especie } = await supabase
           .from('especies')
           .select(`
@@ -96,6 +108,31 @@ export function ProductosPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // ==========================================================
+  // Eliminar producto
+  // ==========================================================
+  async function eliminarProducto(id: string) {
+
+    const confirmar = confirm(
+      '¿Deseas eliminar este producto?'
+    );
+
+    if (!confirmar) return;
+
+    const { error } = await supabase
+      .from('productos')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error(error);
+      alert('Error eliminando producto');
+      return;
+    }
+
+    cargarProductos();
   }
 
   // ==========================================================
@@ -136,10 +173,27 @@ export function ProductosPage() {
           </p>
         </div>
 
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-          <Plus className="w-5 h-5" />
-          Nuevo Producto
-        </button>
+        <div className="flex gap-2">
+
+          <button
+            onClick={() => setMostrarModalEspecies(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+          >
+            Gestionar Especies
+          </button>
+
+          <button
+            onClick={() => {
+              setProductoEditar(null);
+              setMostrarModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            Nuevo Producto
+          </button>
+
+        </div>
 
       </div>
 
@@ -181,9 +235,6 @@ export function ProductosPage() {
               className="p-5 rounded-xl border border-gray-200 hover:border-blue-300 transition-all"
             >
 
-              {/* ==================================================
-                  Encabezado de tarjeta
-              ================================================== */}
               <div className="flex items-center gap-3 mb-3">
 
                 <div className="p-2 bg-blue-100 rounded-lg">
@@ -202,9 +253,6 @@ export function ProductosPage() {
 
               </div>
 
-              {/* ==================================================
-                  Información del producto
-              ================================================== */}
               <div className="space-y-2 text-sm">
 
                 <div className="flex items-center justify-between">
@@ -233,9 +281,6 @@ export function ProductosPage() {
                   </span>
                 </div>
 
-                {/* ==============================================
-                    Indicador PAC
-                ============================================== */}
                 <div className="mt-3">
 
                   <span
@@ -254,6 +299,32 @@ export function ProductosPage() {
 
                 </div>
 
+                {/* ==============================================
+                    Botones de gestión
+                ============================================== */}
+                <div className="flex gap-2 mt-4">
+
+                  <button
+                    onClick={() => {
+                      setProductoEditar(producto);
+                      setMostrarModal(true);
+                    }}
+                    className="flex-1 px-3 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600"
+                  >
+                    Editar
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      eliminarProducto(producto.id)
+                    }
+                    className="flex-1 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  >
+                    Eliminar
+                  </button>
+
+                </div>
+
               </div>
 
             </div>
@@ -263,6 +334,40 @@ export function ProductosPage() {
         </div>
 
       </div>
+      {/* ======================================================
+          Modal de productos
+      ====================================================== */}
+      {mostrarModal && (
+        <ProductoModal
+          producto={
+            productoEditar
+              ? {
+                  id: productoEditar.id,
+                  especie_id: productoEditar.especie_id,
+                  exportable: productoEditar.exportable,
+                  tipo_pac: productoEditar.tipo_pac
+                }
+              : null
+          }
+          onClose={() => {
+            setMostrarModal(false);
+            setProductoEditar(null);
+          }}
+          onSuccess={() => {
+            setMostrarModal(false);
+            setProductoEditar(null);
+            cargarProductos();
+          }}
+        />
+      )}
+
+      {mostrarModalEspecies && (
+        <EspeciesModal
+          onClose={() =>
+            setMostrarModalEspecies(false)
+          }
+        />
+      )}
 
     </div>
   );
