@@ -363,9 +363,10 @@ export function ProductosPage() {
 
       {mostrarModalEspecies && (
         <EspeciesModal
-          onClose={() =>
-            setMostrarModalEspecies(false)
-          }
+          onClose={() => {
+            setMostrarModalEspecies(false);
+            cargarProductos();
+          }}
         />
       )}
 

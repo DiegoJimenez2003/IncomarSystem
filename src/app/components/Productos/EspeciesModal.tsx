@@ -88,6 +88,25 @@ try {
     setGuardando(true);
 
     // ======================================================
+    // Validar duplicados ignorando mayúsculas/minúsculas
+    // ======================================================
+    const { data: existente } = await supabase
+    .from('especies')
+    .select('id')
+    .ilike('nombre', nombre.trim())
+    .maybeSingle();
+
+    if (
+    existente &&
+    existente.id !== editandoId
+    ) {
+    alert(
+        'Ya existe una especie con ese nombre'
+    );
+    return;
+    }
+
+    // ======================================================
     // EDITAR
     // ======================================================
     if (editandoId) {
@@ -95,8 +114,9 @@ try {
     const { error } = await supabase
         .from('especies')
         .update({
-        nombre,
-        nombre_cientifico: nombreCientifico
+        nombre: nombre.trim(),
+        nombre_cientifico:
+            nombreCientifico.trim()
         })
         .eq('id', editandoId);
 
@@ -115,8 +135,9 @@ try {
     const { error } = await supabase
         .from('especies')
         .insert({
-        nombre,
-        nombre_cientifico: nombreCientifico
+        nombre: nombre.trim(),
+        nombre_cientifico:
+            nombreCientifico.trim()
         });
 
     if (error) {
