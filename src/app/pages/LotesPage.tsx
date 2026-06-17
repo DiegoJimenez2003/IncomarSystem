@@ -1,24 +1,93 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Search, Plus, Eye, Edit2, PackageCheck } from 'lucide-react';
-import { lotesData } from '../data/incomarData';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../../utils/supabase'
+import { supabase } from '../../utils/supabase';
+import { LoteModal } from '../components/Productos/LoteModal';
 
-export function LotesPage() {
-  const { user } = useAuth();
+
+  interface Lote {
+    id: string;
+
+    codigo_lote: string;
+
+    especie_id: string;
+    presentacion_id: string;
+    estado_producto_id: string;
+    planta_id: string;
+    turno_id: string;
+
+    fecha_produccion: string;
+    fecha_vencimiento: string | null;
+
+    kilos_netos: number;
+    cantidad_cajas: number | null;
+
+    temperatura: number | null;
+    observaciones: string | null;
+
+    especie?: {
+      nombre: string;
+    };
+
+    planta?: {
+      nombre: string;
+    };
+
+    estado_producto?: {
+      nombre: string;
+    };
+  }
+
+  export function LotesPage() {
+    const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState<string>('todos');
+  const [filtroEstado, setFiltroEstado] = useState('todos');
 
-  const lotesFiltrados = lotesData.filter((lote) => {
-    const matchesSearch =
-      lote.loteOrigen.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lote.loteInterno.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lote.productoNombre.toLowerCase().includes(searchTerm.toLowerCase());
+  const [lotes, setLotes] =
+    useState<Lote[]>([]);
 
-    const matchesEstado = filtroEstado === 'todos' || lote.estado === filtroEstado;
+  const [loading, setLoading] =
+    useState(true);
 
-    return matchesSearch && matchesEstado;
-  });
+  const [mostrarModal, setMostrarModal] =
+    useState(false);
+
+  const [loteEditar, setLoteEditar] =
+    useState<Lote | null>(null);
+
+
+  const lotesFiltrados = lotes.filter((lote) => {
+
+  const matchesSearch =
+
+    lote.codigo_lote
+      ?.toLowerCase()
+      .includes(searchTerm.toLowerCase())
+
+    ||
+
+    lote.especie?.nombre
+      ?.toLowerCase()
+      .includes(searchTerm.toLowerCase());
+
+  const matchesEstado =
+
+    filtroEstado === 'todos'
+
+    ||
+
+    lote.estado_producto?.nombre
+      ?.toLowerCase() === filtroEstado;
+
+    console.log(
+      'Estado BD:',
+      lote.estado_producto?.nombre,
+      'Filtro:',
+      filtroEstado
+    );
+
+  return matchesSearch && matchesEstado;
+});
 
   const formatDate = (dateString: string) => {
     return new Intl.DateTimeFormat('es-CL', {
@@ -30,14 +99,67 @@ export function LotesPage() {
     }).format(new Date(dateString));
   };
 
-  const getEstadoBadge = (estado: string) => {
-    const badges = {
-      activo: 'bg-blue-100 text-blue-700',
-      procesando: 'bg-yellow-100 text-yellow-700',
-      procesado: 'bg-green-100 text-green-700',
-      despachado: 'bg-gray-100 text-gray-700',
-    };
-    return badges[estado as keyof typeof badges] || 'bg-gray-100 text-gray-700';
+  useEffect(() => {
+    cargarLotes();
+  }, []);
+
+  async function cargarLotes() {
+
+    try {
+
+      setLoading(true);
+
+
+
+
+      const { data, error } = await supabase
+        .from('lotes')
+        .select(`
+          *,
+          especie:especie_id (
+            nombre
+          ),
+          planta:planta_id (
+            nombre
+          ),
+          estado_producto:estado_producto_id (
+            nombre
+          )
+        `)
+        .order('created_at', {
+          ascending: false
+        });
+
+      if (error) {
+        console.error(error);
+        return;
+      }
+
+      setLotes(data ?? []);
+
+    } finally {
+      setLoading(false);
+    }
+  }
+
+
+  const getEstadoBadge = (
+  estado?: string
+  ) => {
+
+    const nombre =
+      estado?.toLowerCase() ?? '';
+
+    if (nombre.includes('activo'))
+      return 'bg-blue-100 text-blue-700';
+
+    if (nombre.includes('proces'))
+      return 'bg-yellow-100 text-yellow-700';
+
+    if (nombre.includes('despach'))
+      return 'bg-gray-100 text-gray-700';
+
+    return 'bg-green-100 text-green-700';
   };
 
   const canRegister = user?.rol === 'administrador' || user?.rol === 'supervisor';
@@ -51,7 +173,10 @@ export function LotesPage() {
         </div>
 
         {canRegister && (
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          onClick={() => {
+            setLoteEditar(null);
+            setMostrarModal(true);}}>
             <Plus className="w-5 h-5" />
             Nuevo Lote
           </button>
@@ -88,35 +213,33 @@ export function LotesPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200">
-                <th className="text-left py-3 px-4 text-gray-700">Lote Origen</th>
+
                 <th className="text-left py-3 px-4 text-gray-700">Lote Interno</th>
                 <th className="text-left py-3 px-4 text-gray-700">Producto</th>
                 <th className="text-left py-3 px-4 text-gray-700">Planta</th>
-                <th className="text-left py-3 px-4 text-gray-700">Fecha Llegada</th>
-                <th className="text-left py-3 px-4 text-gray-700">Kilos Entrada</th>
+                <th className="text-left py-3 px-4 text-gray-700">Fecha Producción</th>
+                <th className="text-left py-3 px-4 text-gray-700">Kilos</th>
                 <th className="text-left py-3 px-4 text-gray-700">Estado</th>
                 <th className="text-left py-3 px-4 text-gray-700">Acciones</th>
+
               </tr>
             </thead>
             <tbody>
               {lotesFiltrados.map((lote) => (
                 <tr key={lote.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="py-3 px-4">
-                    <span className="text-sm text-gray-600">{lote.loteOrigen}</span>
-                  </td>
-                  <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
                       <PackageCheck className="w-4 h-4 text-blue-600" />
-                      <span className="text-gray-900">{lote.loteInterno}</span>
+                      <span className="text-gray-900">{lote.codigo_lote}</span>
                     </div>
                   </td>
-                  <td className="py-3 px-4 text-gray-900">{lote.productoNombre}</td>
-                  <td className="py-3 px-4 text-gray-600">{lote.plantaNombre}</td>
-                  <td className="py-3 px-4 text-gray-600">{formatDate(lote.fechaLlegada)}</td>
-                  <td className="py-3 px-4 text-gray-900">{lote.kilosEntrada.toLocaleString()} kg</td>
+                  <td className="py-3 px-4 text-gray-900">{lote.especie?.nombre}</td>
+                  <td className="py-3 px-4 text-gray-600">{lote.planta?.nombre}</td>
+                  <td className="py-3 px-4 text-gray-600">{formatDate(lote.fecha_produccion)}</td>
+                  <td className="py-3 px-4 text-gray-900">{(lote.kilos_netos ?? 0).toLocaleString()} kg</td>
                   <td className="py-3 px-4">
-                    <span className={`px-3 py-1 rounded-full text-xs ${getEstadoBadge(lote.estado)}`}>
-                      {lote.estado.charAt(0).toUpperCase() + lote.estado.slice(1)}
+                    <span className={`px-3 py-1 rounded-full text-xs ${getEstadoBadge(lote.estado_producto?.nombre)}`}>
+                      {lote.estado_producto?.nombre}
                     </span>
                   </td>
                   <td className="py-3 px-4">
@@ -129,6 +252,10 @@ export function LotesPage() {
                       </button>
                       {canRegister && (
                         <button
+                          onClick={() => {
+                            setLoteEditar(lote);
+                            setMostrarModal(true);
+                          }}
                           className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
                           title="Editar"
                         >
@@ -154,21 +281,33 @@ export function LotesPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-xl border border-gray-200">
           <p className="text-gray-600 mb-2">Total Lotes</p>
-          <p className="text-gray-900">{lotesData.length}</p>
+          <p className="text-gray-900">{lotes.length}</p>
         </div>
         <div className="bg-blue-50 p-5 rounded-xl border border-blue-100">
           <p className="text-gray-700 mb-2">Activos</p>
-          <p className="text-blue-700">{lotesData.filter((l) => l.estado === 'activo').length}</p>
+          <p className="text-blue-700">{lotes.filter((l) =>l.estado_producto?.nombre?.toLowerCase().includes('activo')??false).length}</p>
         </div>
         <div className="bg-yellow-50 p-5 rounded-xl border border-yellow-100">
           <p className="text-gray-700 mb-2">Procesando</p>
-          <p className="text-yellow-700">{lotesData.filter((l) => l.estado === 'procesando').length}</p>
+          <p className="text-yellow-700">{lotes.filter((l) =>l.estado_producto?.nombre?.toLowerCase().includes('procesando')).length}</p>
         </div>
         <div className="bg-green-50 p-5 rounded-xl border border-green-100">
           <p className="text-gray-700 mb-2">Procesados</p>
-          <p className="text-green-700">{lotesData.filter((l) => l.estado === 'procesado').length}</p>
+          <p className="text-green-700">{lotes.filter((l) =>l.estado_producto?.nombre?.toLowerCase().includes('procesado')).length}</p>
         </div>
       </div>
+      {mostrarModal && (
+        <LoteModal
+          lote={loteEditar}
+          onClose={() => {
+            setMostrarModal(false);
+            setLoteEditar(null);
+          }}
+          onSuccess={() => {
+            cargarLotes();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -108,6 +108,16 @@ if (!especieId) {
     return;
 }
 
+if (!fechaGuia) {
+    alert('Debe seleccionar fecha y hora');
+    return;
+}
+
+if (!kilos || Number(kilos) <= 0) {
+    alert('Debe ingresar los kilos');
+    return;
+}
+
 try {
 
     setGuardando(true);
