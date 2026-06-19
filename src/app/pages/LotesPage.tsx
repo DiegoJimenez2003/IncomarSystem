@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Search, Plus, Eye, Edit2, PackageCheck } from 'lucide-react';
+import { Search, Plus, Eye, Edit2,Trash2, PackageCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../utils/supabase';
 import { LoteModal } from '../components/Productos/LoteModal';
@@ -55,6 +55,8 @@ import { LoteModal } from '../components/Productos/LoteModal';
   const [loteEditar, setLoteEditar] =
     useState<Lote | null>(null);
 
+    const [loteDetalle, setLoteDetalle] =
+    useState<Lote | null>(null);
 
   const lotesFiltrados = lotes.filter((lote) => {
 
@@ -70,14 +72,12 @@ import { LoteModal } from '../components/Productos/LoteModal';
       ?.toLowerCase()
       .includes(searchTerm.toLowerCase());
 
-  const matchesEstado =
-
+    const matchesEstado =
     filtroEstado === 'todos'
-
     ||
-
     lote.estado_producto?.nombre
-      ?.toLowerCase() === filtroEstado;
+      ?.toLowerCase()
+      .trim() === filtroEstado;
 
     console.log(
       'Estado BD:',
@@ -109,9 +109,6 @@ import { LoteModal } from '../components/Productos/LoteModal';
 
       setLoading(true);
 
-
-
-
       const { data, error } = await supabase
         .from('lotes')
         .select(`
@@ -140,6 +137,28 @@ import { LoteModal } from '../components/Productos/LoteModal';
     } finally {
       setLoading(false);
     }
+  }
+
+  async function eliminarLote(id: string) {
+
+    const confirmar = window.confirm(
+      '¿Está seguro de eliminar este lote?'
+    );
+
+    if (!confirmar) return;
+
+    const { error } = await supabase
+      .from('lotes')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error(error);
+      alert('Error eliminando lote');
+      return;
+    }
+
+    cargarLotes();
   }
 
 
@@ -244,23 +263,31 @@ import { LoteModal } from '../components/Productos/LoteModal';
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
-                      <button
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="Ver detalles"
-                      >
+                      <button onClick={() => setLoteDetalle(lote)}className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Ver detalles">
                         <Eye className="w-4 h-4" />
                       </button>
                       {canRegister && (
-                        <button
-                          onClick={() => {
-                            setLoteEditar(lote);
-                            setMostrarModal(true);
-                          }}
-                          className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
-                          title="Editar"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
+                        <>
+                          <button
+                            onClick={() => {
+                              setLoteEditar(lote);
+                              setMostrarModal(true);
+                            }}
+                            className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+                            title="Editar"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            onClick={() => eliminarLote(lote.id)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
                       )}
                     </div>
                   </td>
@@ -307,6 +334,87 @@ import { LoteModal } from '../components/Productos/LoteModal';
             cargarLotes();
           }}
         />
+      )}
+
+      {loteDetalle && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+
+          <div className="bg-white rounded-xl p-6 w-full max-w-2xl">
+
+            <h2 className="text-xl font-semibold mb-6">
+              Detalle del Lote
+            </h2>
+
+            <div className="grid grid-cols-2 gap-4">
+
+              <div>
+                <p className="text-sm text-gray-500">Código lote</p>
+                <p>{loteDetalle.codigo_lote}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500">Producto</p>
+                <p>{loteDetalle.especie?.nombre}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500">Planta</p>
+                <p>{loteDetalle.planta?.nombre}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500">Estado</p>
+                <p>{loteDetalle.estado_producto?.nombre}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500">Fecha producción</p>
+                <p>{formatDate(loteDetalle.fecha_produccion)}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500">Fecha vencimiento</p>
+                <p>
+                  {loteDetalle.fecha_vencimiento
+                    ? formatDate(loteDetalle.fecha_vencimiento)
+                    : '-'}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500">Kilos netos</p>
+                <p>{loteDetalle.kilos_netos} kg</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500">Cantidad cajas</p>
+                <p>{loteDetalle.cantidad_cajas ?? '-'}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500">Temperatura</p>
+                <p>{loteDetalle.temperatura ?? '-'} °C</p>
+              </div>
+
+            </div>
+
+            <div className="mt-4">
+              <p className="text-sm text-gray-500">Observaciones</p>
+              <p>{loteDetalle.observaciones || '-'}</p>
+            </div>
+
+            <div className="flex justify-end mt-6">
+              <button
+                onClick={() => setLoteDetalle(null)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg"
+              >
+                Cerrar
+              </button>
+            </div>
+
+          </div>
+
+        </div>
       )}
     </div>
   );
