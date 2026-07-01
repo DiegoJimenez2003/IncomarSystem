@@ -3,6 +3,7 @@ import { Search, Plus, Eye, Edit2,Trash2, PackageCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../utils/supabase';
 import { LoteModal } from '../components/Productos/LoteModal';
+import jsPDF from 'jspdf';
 
 
   interface Lote {
@@ -98,6 +99,96 @@ import { LoteModal } from '../components/Productos/LoteModal';
       minute: '2-digit',
     }).format(new Date(dateString));
   };
+
+  // ==========================================
+  // Descargar información del lote en PDF
+  // ==========================================
+  const descargarPDF = (lote: Lote) => {
+
+    const pdf = new jsPDF();
+
+    let y = 20;
+
+    pdf.setFontSize(20);
+    pdf.text("INCOMAR", 20, y);
+
+    y += 8;
+
+    pdf.setFontSize(14);
+    pdf.text("Detalle del Lote", 20, y);
+
+    y += 15;
+
+    pdf.setFontSize(11);
+
+    const agregarLinea = (titulo: string, valor: any) => {
+      pdf.setFont("helvetica", "bold");
+      pdf.text(`${titulo}:`, 20, y);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.text(String(valor ?? "-"), 75, y);
+
+      y += 8;
+    };
+
+    agregarLinea("Código lote", lote.codigo_lote);
+    agregarLinea("Producto", lote.especie?.nombre);
+    agregarLinea("Planta", lote.planta?.nombre);
+    agregarLinea("Estado", lote.estado_producto?.nombre);
+
+    agregarLinea(
+      "Fecha producción",
+      formatDate(lote.fecha_produccion)
+    );
+
+    agregarLinea(
+      "Fecha vencimiento",
+      lote.fecha_vencimiento
+        ? formatDate(lote.fecha_vencimiento)
+        : "-"
+    );
+
+    agregarLinea(
+      "Kilos netos",
+      `${lote.kilos_netos} kg`
+    );
+
+    agregarLinea(
+      "Cantidad cajas",
+      lote.cantidad_cajas ?? "-"
+    );
+
+    agregarLinea(
+      "Temperatura",
+      lote.temperatura != null
+        ? `${lote.temperatura} °C`
+        : "-"
+    );
+
+    agregarLinea(
+      "Observaciones",
+      lote.observaciones || "-"
+    );
+
+    y += 10;
+
+    pdf.setDrawColor(180);
+    pdf.line(20, y, 190, y);
+
+    y += 10;
+
+    pdf.setFontSize(9);
+
+    pdf.text(
+      `Documento generado automáticamente por INCOMAR`,
+      20,
+      y
+    );
+
+    pdf.save(`Lote-${lote.codigo_lote}.pdf`);
+
+  };
+
 
   useEffect(() => {
     cargarLotes();
@@ -404,6 +495,18 @@ import { LoteModal } from '../components/Productos/LoteModal';
             </div>
 
             <div className="flex justify-end mt-6">
+
+              <button
+                  onClick={() => {
+                      if (loteDetalle) {
+                          descargarPDF(loteDetalle);
+                      }
+                  }}
+                  className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                  Descargar PDF
+              </button>
+
               <button
                 onClick={() => setLoteDetalle(null)}
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg"
