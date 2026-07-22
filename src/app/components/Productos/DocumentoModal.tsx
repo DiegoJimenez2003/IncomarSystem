@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Upload, FileText } from "lucide-react";
 import { supabase } from "../../../utils/supabase";
 
 interface Categoria {
@@ -41,6 +42,11 @@ const [categoriaId, setCategoriaId] = useState("");
 const [archivo, setArchivo] = useState<File | null>(null);
 
 const [guardando, setGuardando] = useState(false);
+// ==========================================
+// Referencia al input oculto para seleccionar archivos
+// ==========================================
+
+const inputArchivoRef = useRef<HTMLInputElement>(null);
 
 useEffect(() => {
 cargarCategorias();
@@ -281,34 +287,112 @@ return (
 
         </div>
 
-        <div>
+    {/* ===========================================================
+    ARCHIVO DEL DOCUMENTO
+    =========================================================== */}
 
-        <label className="block mb-2 font-medium">
+<div>
 
-            Archivo
+    <label className="block mb-3 font-medium">
+        Documento
+    </label>
 
-        </label>
+    {/* Input oculto */}
 
-        <input
-            type="file"
-            onChange={(e) =>
-            setArchivo(
-                e.target.files?.[0] ?? null
-            )
-            }
-        />
+    <input
+        ref={inputArchivoRef}
+        type="file"
+        className="hidden"
+        onChange={(e) =>
+            setArchivo(e.target.files?.[0] ?? null)
+        }
+    />
 
-        {archivo && (
+    {/* Si estamos editando mostramos el archivo existente */}
 
-            <p className="text-sm text-gray-500 mt-2">
+    {documento && !archivo && (
 
-            {archivo.name}
+        <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+
+            <p className="text-sm text-gray-500 mb-2">
+                Archivo actual
+            </p>
+
+            <div className="flex items-center gap-3">
+
+                <FileText className="w-6 h-6 text-red-500" />
+
+                <span className="font-medium">
+                    {documento.archivo_nombre}
+                </span>
+
+            </div>
+
+        </div>
+
+    )}
+
+    {/* Si el usuario eligió otro archivo */}
+
+    {archivo && (
+
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-4">
+
+            <p className="text-sm text-green-700 mb-2">
+
+                Nuevo archivo seleccionado
 
             </p>
 
-        )}
+            <div className="flex items-center gap-3">
+
+                <FileText className="w-6 h-6 text-green-600" />
+
+                <span className="font-medium">
+
+                    {archivo.name}
+
+                </span>
+
+            </div>
 
         </div>
+
+    )}
+
+    <button
+        type="button"
+        onClick={() => inputArchivoRef.current?.click()}
+        className="
+            w-full
+            flex
+            items-center
+            justify-center
+            gap-3
+            rounded-lg
+            border-2
+            border-dashed
+            border-blue-300
+            bg-blue-50
+            py-4
+            hover:bg-blue-100
+            transition
+        "
+    >
+
+        <Upload className="w-5 h-5" />
+
+        <span>
+
+            {documento
+                ? "Cambiar archivo"
+                : "Seleccionar archivo"}
+
+        </span>
+
+    </button>
+
+</div>
 
     </div>
 

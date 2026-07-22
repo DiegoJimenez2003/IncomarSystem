@@ -133,29 +133,62 @@ documentos.filter((doc) => {
 });
 
 /* ==========================================================
-    DESCARGAR
+    DESCARGAR DOCUMENTO
 ========================================================== */
 
-function descargarDocumento(
-documento: DocumentoPage
-) {
-window.open(
-    documento.archivo_url,
-    '_blank'
-);
+async function descargarDocumento(documento: DocumentoPage) {
+
+try {
+
+    const { data, error } = await supabase.storage
+        .from("documentos")
+        .download(documento.archivo_url);
+
+    if (error) throw error;
+
+    const url = URL.createObjectURL(data);
+
+    const link = document.createElement("a");
+
+    link.href = url;
+
+    link.download = documento.archivo_nombre;
+
+    document.body.appendChild(link);
+
+    link.click();
+
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+
+} catch (error) {
+
+    console.error(error);
+
+    alert("No fue posible descargar el documento.");
+
+}
+
 }
 
 /* ==========================================================
     VER DOCUMENTO
 ========================================================== */
 
-function verDocumento(
-documento: DocumentoPage
-) {
-window.open(
-    documento.archivo_url,
-    '_blank'
-);
+async function verDocumento(documento: DocumentoPage) {
+
+    const { data, error } = await supabase.storage
+        .from("documentos")
+        .createSignedUrl(documento.archivo_url, 60);
+
+    if (error) {
+        console.error(error);
+        alert("No fue posible abrir el documento.");
+        return;
+    }
+
+    window.open(data.signedUrl, "_blank");
 }
 
 /* ==========================================================

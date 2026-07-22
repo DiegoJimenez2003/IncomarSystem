@@ -19,6 +19,7 @@ import { RacksPage } from './pages/RacksPage';
 import { MovimientosPage } from './pages/MovimientosPage';
 import { CalidadPage } from './pages/CalidadPage';
 import { EstadosProductoPage } from './pages/EstadosProductoPage';
+import { DocumentosPage } from './pages/DocumentosPage';
 import { EmbarquesPage } from './pages/EmbarquesPage';
 import { TrazabilidadPage } from './pages/TrazabilidadPage';
 import { ReportesPage } from './pages/ReportesPage';
@@ -151,6 +152,15 @@ export const router = createBrowserRouter([
           {
             path: '/estados',
             element: <EstadosProductoPage />,
+          },
+
+          // ======================================================
+          // MÓDULO DOCUMENTOS
+          // ======================================================
+
+          {
+            path: '/documentos',
+            element: <DocumentosPage />,
           },
 
           // ======================================================

@@ -15,6 +15,7 @@ import {
   Ship,
   Route,
   Tag,
+  FolderOpen,
 } from 'lucide-react';
 
 import { useAuth } from '../context/AuthContext';
@@ -89,6 +90,12 @@ export function Sidebar({ isOpen }: SidebarProps) {
       path: '/estados',
       icon: Tag,
       roles: ['administrador', 'calidad'],
+    },
+    {
+      name: 'Documentos',
+      path: '/documentos',
+      icon: FolderOpen,
+      roles: ['administrador', 'supervisor', 'calidad', 'secretaria'],
     },
     {
       name: 'Embarques',
