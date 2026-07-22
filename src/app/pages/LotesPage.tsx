@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../utils/supabase';
 import { LoteModal } from '../components/Productos/LoteModal';
 import jsPDF from 'jspdf';
+import { logoIncomar } from '../../utils/LogoBase64';
 
 
   interface Lote {
@@ -100,94 +101,318 @@ import jsPDF from 'jspdf';
     }).format(new Date(dateString));
   };
 
-  // ==========================================
-  // Descargar información del lote en PDF
-  // ==========================================
-  const descargarPDF = (lote: Lote) => {
+  /* ==========================================================
+    DESCARGAR FICHA OFICIAL DEL LOTE
+========================================================== */
 
-    const pdf = new jsPDF();
+const descargarPDF = (lote: Lote) => {
 
-    let y = 20;
+  const pdf = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: "a4",
+  });
 
-    pdf.setFontSize(20);
-    pdf.text("INCOMAR", 20, y);
+  // ======================================================
+  // COLORES CORPORATIVOS
+  // ======================================================
 
-    y += 8;
+  const AZUL = [37, 99, 235];
+  const GRIS = [107, 114, 128];
+  const BORDE = [220, 220, 220];
+  const FONDO = [245, 247, 250];
 
-    pdf.setFontSize(14);
-    pdf.text("Detalle del Lote", 20, y);
+  // ======================================================
+  // FONDO ENCABEZADO
+  // ======================================================
+
+  pdf.setFillColor(AZUL[0], AZUL[1], AZUL[2]);
+  pdf.rect(0, 0, 210, 35, "F");
+
+  // ======================================================
+  // LOGO
+  // ======================================================
+
+  pdf.addImage(
+    logoIncomar,
+    "PNG",
+    10,
+    5,
+    22,
+    22
+  );
+
+  // ======================================================
+  // TITULO
+  // ======================================================
+
+  pdf.setTextColor(255, 255, 255);
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(18);
+
+  pdf.text(
+    "FICHA DE TRAZABILIDAD",
+    40,
+    15
+  );
+
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(11);
+
+  pdf.text(
+    "Sistema de Gestión INCOMAR",
+    40,
+    22
+  );
+
+  pdf.setFont("helvetica", "bold");
+
+  pdf.text(
+    `Lote ${lote.codigo_lote}`,
+    40,
+    29
+  );
+
+  // ======================================================
+  // FECHA DE EMISIÓN
+  // ======================================================
+
+  pdf.setFontSize(9);
+
+  pdf.text(
+    `Emitido: ${new Date().toLocaleString("es-CL")}`,
+    145,
+    28
+  );
+
+  // ======================================================
+  // COMIENZO DEL CONTENIDO
+  // ======================================================
+
+  let y = 45;
+
+  // ======================================================
+  // FUNCIÓN PARA DIBUJAR TÍTULOS DE SECCIÓN
+  // ======================================================
+
+  const tituloSeccion = (titulo: string) => {
+
+    pdf.setFillColor(FONDO[0], FONDO[1], FONDO[2]);
+
+    pdf.setDrawColor(BORDE[0], BORDE[1], BORDE[2]);
+
+    pdf.roundedRect(
+      12,
+      y,
+      186,
+      10,
+      2,
+      2,
+      "FD"
+    );
+
+    pdf.setTextColor(AZUL[0], AZUL[1], AZUL[2]);
+
+    pdf.setFont("helvetica", "bold");
+
+    pdf.setFontSize(12);
+
+    pdf.text(
+      titulo,
+      18,
+      y + 6.5
+    );
 
     y += 15;
 
-    pdf.setFontSize(11);
+  };
 
-    const agregarLinea = (titulo: string, valor: any) => {
-      pdf.setFont("helvetica", "bold");
-      pdf.text(`${titulo}:`, 20, y);
+  // ======================================================
+  // FUNCIÓN PARA DIBUJAR UNA FILA
+  // ======================================================
 
-      pdf.setFont("helvetica", "normal");
-      pdf.text(String(valor ?? "-"), 75, y);
+  const fila = (
+    izquierda: string,
+    valorIzq: any,
+    derecha: string,
+    valorDer: any
+  ) => {
 
-      y += 8;
-    };
+    pdf.setTextColor(0, 0, 0);
 
-    agregarLinea("Código lote", lote.codigo_lote);
-    agregarLinea("Producto", lote.especie?.nombre);
-    agregarLinea("Planta", lote.planta?.nombre);
-    agregarLinea("Estado", lote.estado_producto?.nombre);
+    pdf.setFont("helvetica", "bold");
 
-    agregarLinea(
-      "Fecha producción",
-      formatDate(lote.fecha_produccion)
-    );
-
-    agregarLinea(
-      "Fecha vencimiento",
-      lote.fecha_vencimiento
-        ? formatDate(lote.fecha_vencimiento)
-        : "-"
-    );
-
-    agregarLinea(
-      "Kilos netos",
-      `${lote.kilos_netos} kg`
-    );
-
-    agregarLinea(
-      "Cantidad cajas",
-      lote.cantidad_cajas ?? "-"
-    );
-
-    agregarLinea(
-      "Temperatura",
-      lote.temperatura != null
-        ? `${lote.temperatura} °C`
-        : "-"
-    );
-
-    agregarLinea(
-      "Observaciones",
-      lote.observaciones || "-"
-    );
-
-    y += 10;
-
-    pdf.setDrawColor(180);
-    pdf.line(20, y, 190, y);
-
-    y += 10;
-
-    pdf.setFontSize(9);
+    pdf.setFontSize(10);
 
     pdf.text(
-      `Documento generado automáticamente por INCOMAR`,
-      20,
+      izquierda,
+      18,
       y
     );
 
-    pdf.save(`Lote-${lote.codigo_lote}.pdf`);
+    pdf.setFont("helvetica", "normal");
+
+    pdf.text(
+      String(valorIzq ?? "-"),
+      52,
+      y
+    );
+
+    pdf.setFont("helvetica", "bold");
+
+    pdf.text(
+      derecha,
+      112,
+      y
+    );
+
+    pdf.setFont("helvetica", "normal");
+
+    pdf.text(
+      String(valorDer ?? "-"),
+      152,
+      y
+    );
+
+    y += 8;
 
   };
+
+    // ======================================================
+  // INFORMACIÓN GENERAL
+  // ======================================================
+
+  tituloSeccion("INFORMACIÓN GENERAL");
+
+  fila(
+    "Código",
+    lote.codigo_lote,
+    "Estado",
+    lote.estado_producto?.nombre ?? "-"
+  );
+
+  fila(
+    "Producto",
+    lote.especie?.nombre ?? "-",
+    "Planta",
+    lote.planta?.nombre ?? "-"
+  );
+
+  y += 5;
+
+  // ======================================================
+  // PRODUCCIÓN
+  // ======================================================
+
+  tituloSeccion("DATOS DE PRODUCCIÓN");
+
+  fila(
+    "Producción",
+    formatDate(lote.fecha_produccion),
+    "Vencimiento",
+    lote.fecha_vencimiento
+      ? formatDate(lote.fecha_vencimiento)
+      : "-"
+  );
+
+  fila(
+    "Kilos",
+    `${lote.kilos_netos} kg`,
+    "Cajas",
+    lote.cantidad_cajas ?? "-"
+  );
+
+  fila(
+    "Temperatura",
+    lote.temperatura != null
+      ? `${lote.temperatura} °C`
+      : "-",
+    "Peso Neto",
+    `${lote.kilos_netos} kg`
+  );
+
+  y += 5;
+
+  // ======================================================
+  // OBSERVACIONES
+  // ======================================================
+
+  tituloSeccion("OBSERVACIONES");
+
+  pdf.setDrawColor(220,220,220);
+
+  pdf.roundedRect(
+    15,
+    y,
+    180,
+    30,
+    2,
+    2
+  );
+
+  pdf.setFont("helvetica","normal");
+
+  pdf.setFontSize(10);
+
+  const texto =
+    lote.observaciones?.trim()
+      ? lote.observaciones
+      : "Sin observaciones registradas.";
+
+  const lineas = pdf.splitTextToSize(
+    texto,
+    170
+  );
+
+  pdf.text(
+    lineas,
+    20,
+    y + 8
+  );
+
+  y += 40;
+
+  // ======================================================
+  // PIE DE DOCUMENTO
+  // ======================================================
+
+  pdf.setDrawColor(200);
+
+  pdf.line(
+    15,
+    y,
+    195,
+    y
+  );
+
+  y += 8;
+
+  pdf.setFont("helvetica","italic");
+
+  pdf.setFontSize(9);
+
+  pdf.setTextColor(120);
+
+  pdf.text(
+    "Documento generado automáticamente por el Sistema de Gestión INCOMAR.",
+    15,
+    y
+  );
+
+  pdf.text(
+    "Uso interno - Información confidencial.",
+    15,
+    y + 6
+  );
+
+  // ======================================================
+  // DESCARGAR PDF
+  // ======================================================
+
+  pdf.save(`Ficha_Lote_${lote.codigo_lote}.pdf`);
+
+};
 
 
   useEffect(() => {
