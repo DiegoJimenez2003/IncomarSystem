@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Search, Plus, User, Mail, Shield } from 'lucide-react';
 import { supabase } from '../../utils/supabase'
 
@@ -6,25 +6,57 @@ interface Usuario {
   id: string;
   nombre: string;
   email: string;
-  rol: string;
+  telefono: string | null;
+  rol_id: string;
   activo: boolean;
+
+  roles: {
+    nombre: string;
+  }[];
 }
 
-const usuariosData: Usuario[] = [
-  { id: '1', nombre: 'Carlos Administrador', email: 'admin@incomar.cl', rol: 'administrador', activo: true },
-  { id: '2', nombre: 'Juan Supervisor', email: 'supervisor@incomar.cl', rol: 'supervisor', activo: true },
-  { id: '3', nombre: 'María Calidad', email: 'calidad@incomar.cl', rol: 'calidad', activo: true },
-  { id: '4', nombre: 'Ana Secretaria', email: 'secretaria@incomar.cl', rol: 'secretaria', activo: true },
-];
+
 
 export function UsuariosPage() {
   const [searchTerm, setSearchTerm] = useState('');
-
-  const usuariosFiltrados = usuariosData.filter(
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [loading, setLoading] = useState(true);
+  const usuariosFiltrados = usuarios.filter(
     (usuario) =>
       usuario.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
       usuario.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  
+  useEffect(() => {
+  cargarUsuarios();
+}, []);
+async function cargarUsuarios() {
+
+  setLoading(true);
+
+  const { data, error } = await supabase
+    .from("usuarios")
+    .select(`
+      id,
+      nombre,
+      email,
+      telefono,
+      rol_id,
+      activo,
+      roles(nombre)
+    `)
+    .order("nombre");
+
+  if (!error) {
+
+    setUsuarios(data as Usuario[]);
+
+  }
+
+  setLoading(false);
+  console.log(data);
+}
+
 
   const getRolColor = (rol: string) => {
     const colors = {
@@ -93,8 +125,8 @@ export function UsuariosPage() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <Shield className="w-4 h-4 text-gray-500" />
-                  <span className={`px-3 py-1 rounded-full text-xs ${getRolColor(usuario.rol)}`}>
-                    {getRolNombre(usuario.rol)}
+                  <span className={`px-3 py-1 rounded-full text-xs ${getRolColor(usuario.roles?.[0]?.nombre ?? "-")}`}>
+                    {getRolNombre(usuario.roles?.[0]?.nombre ?? "-")}
                   </span>
                 </div>
 
@@ -117,19 +149,19 @@ export function UsuariosPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-red-50 p-5 rounded-xl border border-red-100">
           <p className="text-gray-700 mb-2">Administradores</p>
-          <p className="text-red-700">{usuariosData.filter((u) => u.rol === 'administrador').length}</p>
+          <p className="text-red-700">{usuarios.filter((u) => u.roles?.[0]?.nombre === 'administrador').length}</p>
         </div>
         <div className="bg-blue-50 p-5 rounded-xl border border-blue-100">
           <p className="text-gray-700 mb-2">Supervisores</p>
-          <p className="text-blue-700">{usuariosData.filter((u) => u.rol === 'supervisor').length}</p>
+          <p className="text-blue-700">{usuarios.filter((u) => u.roles?.[0]?.nombre === 'supervisor').length}</p>
         </div>
         <div className="bg-green-50 p-5 rounded-xl border border-green-100">
           <p className="text-gray-700 mb-2">Control Calidad</p>
-          <p className="text-green-700">{usuariosData.filter((u) => u.rol === 'calidad').length}</p>
+          <p className="text-green-700">{usuarios.filter((u) => u.roles?.[0]?.nombre === 'calidad').length}</p>
         </div>
         <div className="bg-purple-50 p-5 rounded-xl border border-purple-100">
           <p className="text-gray-700 mb-2">Secretarias</p>
-          <p className="text-purple-700">{usuariosData.filter((u) => u.rol === 'secretaria').length}</p>
+          <p className="text-purple-700">{usuarios.filter((u) => u.roles?.[0]?.nombre === 'secretaria').length}</p>
         </div>
       </div>
     </div>
