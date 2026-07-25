@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../utils/supabase";
+import { Eye, EyeOff } from "lucide-react";
 
 interface Rol {
 id: string;
@@ -16,7 +17,7 @@ interface Usuario {
 
     roles?: {
         nombre: string;
-    };
+    }[];
 }
 
 interface Props {
@@ -35,6 +36,7 @@ const [roles, setRoles] = useState<Rol[]>([]);
 const [nombre, setNombre] = useState("");
 const [email, setEmail] = useState("");
 const [password, setPassword] = useState("");
+const [mostrarPassword, setMostrarPassword] = useState(false);
 const [telefono, setTelefono] = useState("");
 const [rolId, setRolId] = useState("");
 const [activo, setActivo] = useState(true);
@@ -202,12 +204,25 @@ return (
                     <label className="block mb-2 font-medium">
                     Contraseña Temporal
                     </label>
-                    <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full border rounded-lg p-2"
-                    />
+                    <div className="relative">
+                        <input
+                            type={mostrarPassword ? "text" : "password"}
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full border rounded-lg p-2 pr-10"
+                        />
+                        <button
+                            type="button"
+                            onClick={() =>
+                            setMostrarPassword(!mostrarPassword)
+                            }
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                        >
+                            {mostrarPassword
+                            ? <EyeOff className="w-5 h-5"/>
+                            : <Eye className="w-5 h-5"/>}
+                        </button>
+                        </div>
                 </div>
 
                 )}

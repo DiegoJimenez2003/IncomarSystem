@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { Eye, EyeOff } from "lucide-react";
 import { Search, Plus, User, Mail, Shield } from 'lucide-react';
+import { UsuarioModal } from '../components/Productos/UsuarioModal';
 import { supabase } from '../../utils/supabase'
 
 interface Usuario {
@@ -12,7 +14,7 @@ interface Usuario {
 
   roles: {
     nombre: string;
-  }[];
+  };
 }
 
 
@@ -21,6 +23,8 @@ export function UsuariosPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [usuarioEditar, setUsuarioEditar] = useState<Usuario | null>(null);
   const usuariosFiltrados = usuarios.filter(
     (usuario) =>
       usuario.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -28,8 +32,36 @@ export function UsuariosPage() {
   );
   
   useEffect(() => {
+
   cargarUsuarios();
-}, []);
+
+    const channel = supabase
+      .channel("usuarios")
+
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "usuarios",
+        },
+        () => {
+
+          cargarUsuarios();
+
+        }
+      )
+
+      .subscribe();
+
+    return () => {
+
+      supabase.removeChannel(channel);
+
+    };
+
+  }, []);
+
 async function cargarUsuarios() {
 
   setLoading(true);
@@ -43,14 +75,28 @@ async function cargarUsuarios() {
       telefono,
       rol_id,
       activo,
-      roles(nombre)
+      roles!usuarios_rol_id_fkey(
+        nombre
+      )
     `)
     .order("nombre");
 
-  if (!error) {
+  if (!error && data) {
 
-    setUsuarios(data as Usuario[]);
+  const usuariosMapeados: Usuario[] = data.map((u: any) => ({
+      id: u.id,
+      nombre: u.nombre,
+      email: u.email,
+      telefono: u.telefono,
+      rol_id: u.rol_id,
+      activo: u.activo,
 
+      roles: Array.isArray(u.roles)
+        ? u.roles[0]
+        : u.roles,
+    }));
+
+    setUsuarios(usuariosMapeados);
   }
 
   setLoading(false);
@@ -86,7 +132,12 @@ async function cargarUsuarios() {
           <p className="text-gray-600">Administración de accesos y permisos</p>
         </div>
 
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+        <button
+          onClick={() => {
+            setUsuarioEditar(null);
+            setModalOpen(true);
+          }}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
           <Plus className="w-5 h-5" />
           Nuevo Usuario
         </button>
@@ -125,8 +176,8 @@ async function cargarUsuarios() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <Shield className="w-4 h-4 text-gray-500" />
-                  <span className={`px-3 py-1 rounded-full text-xs ${getRolColor(usuario.roles?.[0]?.nombre ?? "-")}`}>
-                    {getRolNombre(usuario.roles?.[0]?.nombre ?? "-")}
+                  <span className={`px-3 py-1 rounded-full text-xs ${getRolColor(usuario.roles?.nombre ?? "-")}`}>
+                    {getRolNombre(usuario.roles?.nombre ?? "-")}
                   </span>
                 </div>
 
@@ -149,21 +200,28 @@ async function cargarUsuarios() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-red-50 p-5 rounded-xl border border-red-100">
           <p className="text-gray-700 mb-2">Administradores</p>
-          <p className="text-red-700">{usuarios.filter((u) => u.roles?.[0]?.nombre === 'administrador').length}</p>
+          <p className="text-red-700">{usuarios.filter((u) => u.roles?.nombre === "administrador").length}</p>
         </div>
         <div className="bg-blue-50 p-5 rounded-xl border border-blue-100">
           <p className="text-gray-700 mb-2">Supervisores</p>
-          <p className="text-blue-700">{usuarios.filter((u) => u.roles?.[0]?.nombre === 'supervisor').length}</p>
+          <p className="text-blue-700">{usuarios.filter((u) => u.roles?.nombre === "supervisor").length}</p>
         </div>
         <div className="bg-green-50 p-5 rounded-xl border border-green-100">
           <p className="text-gray-700 mb-2">Control Calidad</p>
-          <p className="text-green-700">{usuarios.filter((u) => u.roles?.[0]?.nombre === 'calidad').length}</p>
+          <p className="text-green-700">{usuarios.filter((u) => u.roles?.nombre === "calidad").length}</p>
         </div>
         <div className="bg-purple-50 p-5 rounded-xl border border-purple-100">
           <p className="text-gray-700 mb-2">Secretarias</p>
-          <p className="text-purple-700">{usuarios.filter((u) => u.roles?.[0]?.nombre === 'secretaria').length}</p>
+          <p className="text-purple-700">{usuarios.filter((u) => u.roles?.nombre === "secretaria").length}</p>
         </div>
       </div>
+      {modalOpen && (
+        <UsuarioModal
+          usuario={usuarioEditar}
+          onClose={() => setModalOpen(false)}
+          onSuccess={cargarUsuarios}
+        />
+      )}
     </div>
   );
 }
