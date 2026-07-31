@@ -15,9 +15,9 @@ interface Usuario {
     rol_id: string;
     activo: boolean;
 
-    roles?: {
+    roles: {
         nombre: string;
-    }[];
+    };
 }
 
 interface Props {

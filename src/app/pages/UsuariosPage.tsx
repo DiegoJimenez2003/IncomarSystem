@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Eye, EyeOff } from "lucide-react";
-import { Search, Plus, User, Mail, Shield } from 'lucide-react';
+import { Search, Plus, User, Mail, Shield,Pencil, } from 'lucide-react';
 import { UsuarioModal } from '../components/Productos/UsuarioModal';
 import { supabase } from '../../utils/supabase'
 
@@ -191,6 +191,19 @@ async function cargarUsuarios() {
                     {usuario.activo ? 'Activo' : 'Inactivo'}
                   </span>
                 </div>
+              </div>
+              <div className="flex gap-3 pt-4 mt-4 border-t border-gray-200">
+                <button
+                  onClick={() => {
+                    setUsuarioEditar(usuario);
+                    setModalOpen(true);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                >
+                  <Pencil className="w-4 h-4" />
+                  Editar
+                </button>
+
               </div>
             </div>
           ))}

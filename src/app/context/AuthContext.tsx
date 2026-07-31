@@ -19,6 +19,7 @@ export interface User {
   nombre: string;
   email: string;
   rol?: UserRole;
+  activo: boolean;
 }
 
 interface AuthContextType {
@@ -50,37 +51,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function obtenerUsuario(authId: string) {
-  const { data, error } = await supabase
-  .from('usuarios')
-  .select(`
-    id,
-    nombre,
-    email,
-    roles(nombre)
-  `)
-  .eq('auth_id', authId)
-  .maybeSingle();
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select(`
+        id,
+        nombre,
+        email,
+        activo,
+        roles!usuarios_rol_id_fkey(
+          nombre
+        )
+      `)
+      .eq('auth_id', authId)
+      .maybeSingle();
 
-  console.log('USUARIO:', data);
-  console.log('ERROR:', error);
+    console.log('USUARIO:', data);
+    console.log('ERROR:', error);
 
-  if (error) {
-    console.error(error);
-    return;
-  }
+    if (error) {
+      console.error(error);
+      return;
+    }
 
-  if (!data) {
-    console.error('No existe usuario');
-    return;
-  }
+    if (!data) {
+      console.error('No existe usuario');
 
-  setUser({
-    id: data.id,
-    nombre: data.nombre,
-    email: data.email,
-    rol: (data.roles as any)?.nombre as UserRole,
+      await supabase.auth.signOut();
+      setUser(null);
+
+      return;
+    }
+
+    // ==========================================
+    // COMPROBAR SI EL USUARIO ESTÁ ACTIVO
+    // ==========================================
+
+    if (!data.activo) {
+      console.warn('Usuario desactivado');
+
+      await supabase.auth.signOut();
+      setUser(null);
+
+      return;
+    }
+
+    // ==========================================
+    // USUARIO ACTIVO
+    // ==========================================
+
+    setUser({
+      id: data.id,
+      nombre: data.nombre,
+      email: data.email,
+      activo: data.activo,
+      rol: (data.roles as any)?.nombre as UserRole,
     });
-}
+  }
 
   async function obtenerSesion() {
     const {
