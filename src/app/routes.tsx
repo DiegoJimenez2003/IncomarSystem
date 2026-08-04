@@ -5,6 +5,7 @@ import { createBrowserRouter, Navigate } from 'react-router';
 // ======================================================
 
 import { LoginPage } from './pages/LoginPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 
 // ======================================================
@@ -48,6 +49,11 @@ export const router = createBrowserRouter([
   {
     path: '/login',
     element: <LoginPage />,
+  },
+
+  {
+    path: '/reset-password',
+    element: <ResetPasswordPage />,
   },
 
   // ======================================================
