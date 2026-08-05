@@ -1,21 +1,127 @@
-import { useState } from 'react';
-import { Search, Plus, Warehouse, AlertCircle } from 'lucide-react';
-import { racksData } from '../data/incomarData';
+import { useEffect, useState } from 'react';
+import { Search, Plus, Warehouse, AlertCircle, Pencil, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../../utils/supabase'
+import { supabase } from '../../utils/supabase';
+import RackModal from "../components/Productos/RackModal";
 
 export function RacksPage() {
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroEstado, setFiltroEstado] = useState<string>('todos');
+  const [racks, setRacks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const racksFiltrados = racksData.filter((rack) => {
+  useEffect(() => {
+    cargarRacks();
+  }, []);
+
+  async function cargarRacks() {
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from('racks')
+      .select(`
+        *,
+        detalle_lote (
+          id,
+          cajas,
+          kilos
+        )
+      `)
+      .order('codigo');
+
+    if (error) {
+      console.error(error);
+    } else {
+      setRacks(data ?? []);
+    }
+
+    setLoading(false);
+  }
+
+  const [mostrarModal, setMostrarModal] = useState(false);
+  const [rackEditar, setRackEditar] = useState<any | null>(null);
+
+  async function guardarRack(rack: {
+    id?: number;
+    codigo: string;
+    ubicacion: string;
+    capacidad_kg: number;
+    activo: boolean;
+  }) {
+    if (rack.id) {
+      // Editar rack existente
+      const { error } = await supabase
+        .from("racks")
+        .update({
+          codigo: rack.codigo,
+          ubicacion: rack.ubicacion,
+          capacidad_kg: rack.capacidad_kg,
+          activo: rack.activo,
+        })
+        .eq("id", rack.id);
+
+      if (error) {
+        console.error(error);
+        alert("Error al actualizar el rack");
+        return;
+      }
+    } else {
+      // Crear rack nuevo
+      const { error } = await supabase
+        .from("racks")
+        .insert(rack);
+
+      if (error) {
+        console.error(error);
+        alert("Error al guardar el rack");
+        return;
+      }
+    }
+
+    setMostrarModal(false);
+    setRackEditar(null);
+    cargarRacks();
+  }
+
+  async function eliminarRack(id: number) {
+    const confirmar = window.confirm(
+      "¿Estás seguro de que deseas eliminar este rack? Esta acción no se puede deshacer."
+    );
+
+    if (!confirmar) return;
+
+    const { error } = await supabase
+      .from("racks")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error(error);
+      alert("Error al eliminar el rack. Puede que tenga lotes asociados.");
+      return;
+    }
+
+    cargarRacks();
+  }
+
+  function abrirEditar(rack: any) {
+    setRackEditar(rack);
+    setMostrarModal(true);
+  }
+
+  function abrirNuevo() {
+    setRackEditar(null);
+    setMostrarModal(true);
+  }
+
+  const racksFiltrados = racks.filter((rack) => {
     const matchesSearch =
       rack.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       rack.ubicacion.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesEstado = filtroEstado === 'todos' || rack.estado === filtroEstado;
-
+    
     return matchesSearch && matchesEstado;
   });
 
@@ -29,10 +135,6 @@ export function RacksPage() {
     return badges[estado as keyof typeof badges] || 'bg-gray-100 text-gray-700';
   };
 
-  const getTipoBadge = (tipo: string) => {
-    return tipo === 'PAC' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700';
-  };
-
   const canManage = user?.rol === 'administrador' || user?.rol === 'supervisor';
 
   return (
@@ -44,7 +146,7 @@ export function RacksPage() {
         </div>
 
         {canManage && (
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+          <button onClick={abrirNuevo} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
             <Plus className="w-5 h-5" />
             Nuevo Rack
           </button>
@@ -79,7 +181,11 @@ export function RacksPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {racksFiltrados.map((rack) => {
-            const porcentajeOcupacion = (rack.capacidadActual / rack.capacidadMaxima) * 100;
+            const capacidadActual = rack.detalle_lote?.reduce(
+              (total: number, detalle: any) => total + (detalle.cajas ?? 0), 0) ?? 0;
+            const capacidadMaxima = 45;
+            const porcentajeOcupacion =
+              (capacidadActual / capacidadMaxima) * 100;
             const estaLleno = porcentajeOcupacion >= 100;
 
             return (
@@ -101,7 +207,30 @@ export function RacksPage() {
                       <p className="text-xs text-gray-600">{rack.ubicacion}</p>
                     </div>
                   </div>
-                  {estaLleno && <AlertCircle className="w-5 h-5 text-red-500" />}
+
+                  <div className="flex items-center gap-1">
+                    {estaLleno && <AlertCircle className="w-5 h-5 text-red-500" />}
+
+                    {canManage && (
+                      <>
+                        <button
+                          onClick={() => abrirEditar(rack)}
+                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-blue-600 transition-colors"
+                          title="Editar rack"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          onClick={() => eliminarRack(rack.id)}
+                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-red-600 transition-colors"
+                          title="Eliminar rack"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-3">
@@ -109,7 +238,7 @@ export function RacksPage() {
                     <div className="flex justify-between text-sm mb-1">
                       <span className="text-gray-600">Ocupación</span>
                       <span className="text-gray-900">
-                        {rack.capacidadActual}/{rack.capacidadMaxima} cajas
+                        {capacidadActual}/{capacidadMaxima} cajas
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
@@ -128,11 +257,11 @@ export function RacksPage() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className={`flex-1 px-3 py-1 rounded-lg text-center text-xs ${getTipoBadge(rack.tipo)}`}>
-                      {rack.tipo}
+                    <span className="flex-1 px-3 py-1 rounded-lg text-center text-xs bg-gray-100 text-gray-700">
+                      Rack
                     </span>
-                    <span className={`flex-1 px-3 py-1 rounded-lg text-center text-xs ${getEstadoBadge(rack.estado)}`}>
-                      {rack.estado.charAt(0).toUpperCase() + rack.estado.slice(1)}
+                    <span className={`flex-1 px-3 py-1 rounded-lg text-center text-xs ${getEstadoBadge(rack.activo ? 'disponible' : 'mantenimiento')}`}>
+                      {rack.activo ? 'Disponible' : 'Mantenimiento'}
                     </span>
                   </div>
                 </div>
@@ -152,21 +281,38 @@ export function RacksPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-green-50 p-5 rounded-xl border border-green-100">
           <p className="text-gray-700 mb-2">Disponibles</p>
-          <p className="text-green-700">{racksData.filter((r) => r.estado === 'disponible').length}</p>
+          <p className="text-green-700">
+            {racks.filter((r) => r.activo).length}
+          </p>
         </div>
+
         <div className="bg-yellow-50 p-5 rounded-xl border border-yellow-100">
           <p className="text-gray-700 mb-2">Parciales</p>
-          <p className="text-yellow-700">{racksData.filter((r) => r.estado === 'parcial').length}</p>
+          <p className="text-yellow-700">0</p>
         </div>
+
         <div className="bg-red-50 p-5 rounded-xl border border-red-100">
           <p className="text-gray-700 mb-2">Llenos</p>
-          <p className="text-red-700">{racksData.filter((r) => r.estado === 'lleno').length}</p>
+          <p className="text-red-700">0</p>
         </div>
+
         <div className="bg-gray-50 p-5 rounded-xl border border-gray-100">
           <p className="text-gray-700 mb-2">Mantenimiento</p>
-          <p className="text-gray-700">{racksData.filter((r) => r.estado === 'mantenimiento').length}</p>
+          <p className="text-gray-700">
+            {racks.filter((r) => !r.activo).length}
+          </p>
         </div>
       </div>
+
+      <RackModal
+        isOpen={mostrarModal}
+        onClose={() => {
+          setMostrarModal(false);
+          setRackEditar(null);
+        }}
+        onSave={guardarRack}
+        rackEditar={rackEditar}
+      />
     </div>
   );
 }

@@ -5,6 +5,8 @@ import { supabase } from '../../utils/supabase';
 import { LoteModal } from '../components/Productos/LoteModal';
 import jsPDF from 'jspdf';
 import { logoIncomar } from '../../utils/LogoBase64';
+import { AsignarRackModal } from '../components/Productos/AsignarRackModal';
+import { Warehouse } from 'lucide-react'; // agrégalo junto a los otros imports de lucide-react
 
 
   interface Lote {
@@ -59,6 +61,8 @@ import { logoIncomar } from '../../utils/LogoBase64';
 
     const [loteDetalle, setLoteDetalle] =
     useState<Lote | null>(null);
+
+    const [loteAsignar, setLoteAsignar] = useState<Lote | null>(null);
 
   const lotesFiltrados = lotes.filter((lote) => {
 
@@ -583,6 +587,13 @@ const descargarPDF = (lote: Lote) => {
                         title="Ver detalles">
                         <Eye className="w-4 h-4" />
                       </button>
+                      <button
+                        onClick={() => setLoteAsignar(lote)}
+                        className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                        title="Asignar a rack"
+                      >
+                        <Warehouse className="w-4 h-4" />
+                      </button>
                       {canRegister && (
                         <>
                           <button
@@ -743,6 +754,15 @@ const descargarPDF = (lote: Lote) => {
           </div>
 
         </div>
+      )}
+      {loteAsignar && (
+        <AsignarRackModal
+          lote={loteAsignar}
+          onClose={() => setLoteAsignar(null)}
+          onSuccess={() => {
+            cargarLotes();
+          }}
+        />
       )}
     </div>
   );
