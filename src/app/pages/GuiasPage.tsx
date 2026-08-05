@@ -11,7 +11,8 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../utils/supabase';
 
 import { GuiasModal } from '../components/Productos/GuiasModal';
-
+import { CrearLoteDesdeGuiasModal } from '../components/Productos/CrearLoteDesdeGuiasModal';
+import { PackagePlus } from 'lucide-react';
 
 interface Guia {
   id: string;
@@ -24,8 +25,12 @@ interface Guia {
   kilos: number;
   fecha_guia: string;
   observaciones: string;
+  lote_id: string | null;
   especie?: {
-  nombre: string;
+    nombre: string;
+  } | null;
+  lote?: {
+    codigo_lote: string;
   } | null;
 }
 
@@ -41,6 +46,9 @@ export function GuiasPage() {
 
   const [guiaEditar, setGuiaEditar] =
     useState<Guia | null>(null);
+
+  const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
+  const [mostrarCrearLote, setMostrarCrearLote] = useState(false);
 
   const [loading, setLoading] =
     useState(true);
@@ -75,9 +83,7 @@ export function GuiasPage() {
 }, []);
 
 async function cargarGuias() {
-
   try {
-
     setLoading(true);
 
     const { data, error } = await supabase
@@ -86,11 +92,12 @@ async function cargarGuias() {
         *,
         especie:especie_id (
           nombre
+        ),
+        lote:lote_id (
+          codigo_lote
         )
       `)
-      .order('fecha_guia', {
-        ascending: false
-      });
+      .order('fecha_guia', { ascending: false });
 
     if (error) {
       console.error(error);
@@ -98,11 +105,19 @@ async function cargarGuias() {
     }
 
     setGuias(data ?? []);
-
   } finally {
     setLoading(false);
   }
 }
+
+
+  function toggleSeleccion(id: string) {
+    setSeleccionadas((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    );
+  }
+
+  const guiasSeleccionadas = guias.filter((g) => seleccionadas.includes(g.id));
 
 
   function handleEditar(guia: Guia) {
@@ -144,6 +159,16 @@ async function cargarGuias() {
           <p className="text-gray-600">Registro de guías asociadas a lotes</p>
         </div>
 
+      {seleccionadas.length > 0 && (
+        <button
+          onClick={() => setMostrarCrearLote(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+        >
+          <PackagePlus className="w-5 h-5" />
+          Crear Lote ({seleccionadas.length})
+        </button>
+      )}
+
         {canManage && (
           <button onClick={() => {setGuiaEditar(null); setMostrarModal(true);}}
     className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
@@ -177,19 +202,30 @@ async function cargarGuias() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200">
+                <th className="py-3 px-4"></th>
                 <th className="text-left py-3 px-4 text-gray-700">Nº Guía</th>
-                <th className="text-left py-3 px-4 text-gray-700">Lote</th>
+                <th className="text-left py-3 px-4 text-gray-700">Lote Origen</th>
                 <th className="text-left py-3 px-4 text-gray-700">Barco</th>
                 <th className="text-left py-3 px-4 text-gray-700">Origen</th>
                 <th className="text-left py-3 px-4 text-gray-700">Destino</th>
                 <th className="text-left py-3 px-4 text-gray-700">Kilos</th>
                 <th className="text-left py-3 px-4 text-gray-700">Fecha</th>
+                <th className="text-left py-3 px-4 text-gray-700">Lote Interno</th>
                 {canManage && <th className="text-left py-3 px-4 text-gray-700">Acciones</th>}
               </tr>
             </thead>
             <tbody>
               {guiasFiltradas.map((guia) => (
                 <tr key={guia.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="py-3 px-4">
+                    <input
+                      type="checkbox"
+                      checked={seleccionadas.includes(guia.id)}
+                      onChange={() => toggleSeleccion(guia.id)}
+                      disabled={!!guia.lote_id}
+                      className="w-4 h-4"
+                    />
+                  </td>
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
                       <FileSignature className="w-4 h-4 text-blue-600" />
@@ -202,6 +238,17 @@ async function cargarGuias() {
                   <td className="py-3 px-4 text-gray-600">{guia.destino}</td>
                   <td className="py-3 px-4 text-gray-900">{guia.kilos.toLocaleString()} kg</td>
                   <td className="py-3 px-4 text-gray-600">{formatDate(guia.fecha_guia)}</td>
+                  <td className="py-3 px-4">
+                    {guia.lote ? (
+                      <span className="px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs">
+                        {guia.lote.codigo_lote}
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 bg-gray-100 text-gray-500 rounded-lg text-xs">
+                        Pendiente
+                      </span>
+                    )}
+                  </td>
                   {canManage && (
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
@@ -249,6 +296,16 @@ async function cargarGuias() {
         />
       )}
 
+      {mostrarCrearLote && (
+        <CrearLoteDesdeGuiasModal
+          guias={guiasSeleccionadas}
+          onClose={() => setMostrarCrearLote(false)}
+          onSuccess={() => {
+            setSeleccionadas([]);
+            cargarGuias();
+          }}
+        />
+      )}
     </div>
   );
 }
