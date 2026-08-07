@@ -113,19 +113,59 @@ try {
     setGuardando(true);
 
     const { error } = await supabase
-    .from('detalle_lote')
-    .insert({
-        lote_id: lote.id,
-        rack_id: rackId,
-        kilos: kilosNum,
-        cajas: cajasNum || null,
-    });
+        .from('detalle_lote')
+        .insert({
+            lote_id: lote.id,
+            rack_id: rackId,
+            kilos: kilosNum,
+            cajas: cajasNum || null,
+        });
 
-    if (error) throw error;
+        if (error) throw error;
 
-    setRackId('');
-    setKilos('');
-    setCajas('');
+        // =====================================================
+        // REGISTRAR MOVIMIENTO DE ENTRADA
+        // =====================================================
+
+        // Buscar el tipo de movimiento "entrada"
+        const { data: tipoEntrada, error: errorTipo } =
+        await supabase
+            .from('tipos_movimiento')
+            .select('id')
+            .eq('nombre', 'entrada')
+            .single();
+
+        if (errorTipo) {
+        console.error(
+            'Error buscando tipo de movimiento:',
+            errorTipo
+        );
+        throw errorTipo;
+        }
+
+        // Registrar movimiento
+        const { error: errorMovimiento } =
+        await supabase
+            .from('movimientos')
+            .insert({
+            lote_id: lote.id,
+            tipo_movimiento_id: tipoEntrada.id,
+            cantidad_kg: kilosNum,
+            cantidad_cajas: cajasNum || null,
+            descripcion: `Ingreso del lote ${lote.codigo_lote} al inventario`,
+            });
+
+        if (errorMovimiento) {
+        console.error(
+            'Error registrando movimiento:',
+            errorMovimiento
+        );
+        throw errorMovimiento;
+        }
+
+        setRackId('');
+        setKilos('');
+        setCajas('');
 
     await cargarAsignacionesExistentes();
     onSuccess();
