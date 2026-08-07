@@ -460,13 +460,25 @@ const descargarPDF = (lote: Lote) => {
   }
 
   async function eliminarLote(id: string) {
-
     const confirmar = window.confirm(
-      '¿Está seguro de eliminar este lote?'
+      '¿Está seguro de eliminar este lote? Las guías asociadas quedarán sin lote asignado.'
     );
 
     if (!confirmar) return;
 
+    // Primero desvincula las guías asociadas
+    const { error: errorGuias } = await supabase
+      .from('guias')
+      .update({ lote_id: null })
+      .eq('lote_id', id);
+
+    if (errorGuias) {
+      console.error(errorGuias);
+      alert('Error al desvincular las guías asociadas');
+      return;
+    }
+
+    // Luego elimina el lote
     const { error } = await supabase
       .from('lotes')
       .delete()
@@ -478,8 +490,8 @@ const descargarPDF = (lote: Lote) => {
       return;
     }
 
-    cargarLotes();
-  }
+  cargarLotes();
+}
 
 
   const getEstadoBadge = (
