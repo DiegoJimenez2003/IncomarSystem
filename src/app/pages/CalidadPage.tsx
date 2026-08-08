@@ -1,206 +1,666 @@
-import { useState } from 'react';
-import { Search, Plus, ClipboardCheck, CheckCircle, XCircle, AlertCircle, Tag } from 'lucide-react';
-import { calidadData, estadosProductoData, lotesData } from '../data/incomarData';
-import { useAuth } from '../context/AuthContext';
-import { supabase } from '../../utils/supabase'
+import { useEffect, useState } from "react";
+import {
+  Search,
+  Plus,
+  ClipboardCheck,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Tag,
+  Pencil,
+  Trash2,
+} from "lucide-react";
+
+import { useAuth } from "../context/AuthContext";
+import { supabase } from "../../utils/supabase";
+import { NuevoControlCalidadModal } from "../components/Productos/NuevoControlCalidadModal";
+
+interface ControlCalidad {
+  id: string;
+  lote_id: string | null;
+  usuario_id: string | null;
+  temperatura: number | null;
+  observacion: string | null;
+  fecha: string;
+  estado_producto_id: string | null;
+
+  lotes?: {
+    codigo_lote: string;
+  } | null;
+
+  usuarios?: {
+    nombre: string;
+  } | null;
+
+  estados_producto?: {
+    nombre: string;
+    color: string | null;
+  } | null;
+}
 
 export function CalidadPage() {
   const { user } = useAuth();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState<string>('todos');
 
-  const calidadFiltrada = calidadData.filter((control) => {
-    const matchesSearch =
-      control.loteCodigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      control.productoNombre.toLowerCase().includes(searchTerm.toLowerCase());
+  const [controles, setControles] = useState<ControlCalidad[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("todos");
+  const [cargando, setCargando] = useState(true);
+  const [modalAbierto, setModalAbierto] = useState(false);
+  const [controlSeleccionado, setControlSeleccionado] =
+    useState<ControlCalidad | null>(null);
 
-    const matchesEstado = filtroEstado === 'todos' || control.estado === filtroEstado;
+  
+  const canRegister =
+    user?.rol === "administrador" ||
+    user?.rol === "calidad";
 
-    return matchesSearch && matchesEstado;
-  });
+  useEffect(() => {
+    cargarControles();
+
+    const canal = supabase
+      .channel("control-calidad-page")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "control_calidad",
+        },
+        () => {
+          cargarControles();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(canal);
+    };
+  }, []);
+
+  // =====================================================
+  // CARGAR CONTROLES
+  // =====================================================
+
+  async function cargarControles() {
+    setCargando(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("control_calidad")
+        .select(`
+          id,
+          lote_id,
+          usuario_id,
+          temperatura,
+          observacion,
+          fecha,
+          estado_producto_id,
+
+          lotes (
+            codigo_lote
+          ),
+
+          usuarios (
+            nombre
+          ),
+
+          estados_producto (
+            nombre,
+            color
+          )
+        `)
+        .order("fecha", { ascending: false });
+
+      if (error) throw error;
+
+      const controlesFinales: ControlCalidad[] =
+        (data ?? []).map((control: any) => ({
+          id: control.id,
+          lote_id: control.lote_id,
+          usuario_id: control.usuario_id,
+
+          temperatura:
+            control.temperatura !== null
+              ? Number(control.temperatura)
+              : null,
+
+          observacion: control.observacion,
+          fecha: control.fecha,
+          estado_producto_id:
+            control.estado_producto_id,
+
+          // Supabase puede devolver relaciones como array
+          lotes:
+            Array.isArray(control.lotes)
+              ? control.lotes[0] ?? null
+              : control.lotes ?? null,
+
+          usuarios:
+            Array.isArray(control.usuarios)
+              ? control.usuarios[0] ?? null
+              : control.usuarios ?? null,
+
+          estados_producto:
+            Array.isArray(control.estados_producto)
+              ? control.estados_producto[0] ?? null
+              : control.estados_producto ?? null,
+        }));
+
+      setControles(controlesFinales);
+    } catch (error) {
+      console.error(
+        "Error cargando controles de calidad:",
+        error
+      );
+
+      setControles([]);
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  async function eliminarControl(id: string) {
+  const confirmar = window.confirm(
+    "¿Está seguro de eliminar este control de calidad?"
+  );
+
+  if (!confirmar) return;
+
+  try {
+    const { error } = await supabase
+      .from("control_calidad")
+      .delete()
+      .eq("id", id);
+
+    if (error) throw error;
+
+    await cargarControles();
+  } catch (error) {
+    console.error(
+      "Error eliminando control de calidad:",
+      error
+    );
+
+    alert("No se pudo eliminar el control de calidad");
+  }
+}
+
+
+  // =====================================================
+  // FECHA
+  // =====================================================
 
   const formatDate = (dateString: string) => {
-    return new Intl.DateTimeFormat('es-CL', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+    return new Intl.DateTimeFormat("es-CL", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     }).format(new Date(dateString));
   };
 
-  const getEstadoIcon = (estado: string) => {
-    if (estado === 'aprobado') return <CheckCircle className="w-5 h-5 text-green-600" />;
-    if (estado === 'rechazado') return <XCircle className="w-5 h-5 text-red-600" />;
-    return <AlertCircle className="w-5 h-5 text-yellow-600" />;
+  // =====================================================
+  // ESTADO
+  // =====================================================
+
+  const obtenerEstado = (
+    control: ControlCalidad
+  ) => {
+    return (
+      control.estados_producto?.nombre
+        ?.toLowerCase()
+        .trim() ?? ""
+    );
   };
 
-  const getEstadoBadge = (estado: string) => {
-    const badges = {
-      aprobado: 'bg-green-100 text-green-700',
-      rechazado: 'bg-red-100 text-red-700',
-      observado: 'bg-yellow-100 text-yellow-700',
-    };
-    return badges[estado as keyof typeof badges] || 'bg-gray-100 text-gray-700';
+  const getEstadoIcon = (
+    control: ControlCalidad
+  ) => {
+    const estado = obtenerEstado(control);
+
+    if (
+      estado.includes("aprob") ||
+      estado.includes("liber")
+    ) {
+      return (
+        <CheckCircle className="w-5 h-5 text-green-600" />
+      );
+    }
+
+    if (
+      estado.includes("rechaz") ||
+      estado.includes("bloque")
+    ) {
+      return (
+        <XCircle className="w-5 h-5 text-red-600" />
+      );
+    }
+
+    return (
+      <AlertCircle className="w-5 h-5 text-yellow-600" />
+    );
   };
 
-  const canRegister = user?.rol === 'administrador' || user?.rol === 'calidad';
+  const getEstadoBadge = (
+    control: ControlCalidad
+  ) => {
+    const estado = obtenerEstado(control);
+
+    if (
+      estado.includes("aprob") ||
+      estado.includes("liber")
+    ) {
+      return "bg-green-100 text-green-700";
+    }
+
+    if (
+      estado.includes("rechaz") ||
+      estado.includes("bloque")
+    ) {
+      return "bg-red-100 text-red-700";
+    }
+
+    return "bg-yellow-100 text-yellow-700";
+  };
+
+  const getEstadoCard = (
+    control: ControlCalidad
+  ) => {
+    const estado = obtenerEstado(control);
+
+    if (
+      estado.includes("rechaz") ||
+      estado.includes("bloque")
+    ) {
+      return "border-red-200 bg-red-50";
+    }
+
+    if (
+      estado.includes("aprob") ||
+      estado.includes("liber")
+    ) {
+      return "border-green-200 bg-green-50";
+    }
+
+    return "border-yellow-200 bg-yellow-50";
+  };
+
+  // =====================================================
+  // FILTROS
+  // =====================================================
+
+  const controlesFiltrados = controles.filter(
+    (control) => {
+      const lote =
+        control.lotes?.codigo_lote
+          ?.toLowerCase() ?? "";
+
+      const estado =
+        obtenerEstado(control);
+
+      const busqueda =
+        searchTerm.toLowerCase();
+
+      const matchesSearch =
+        lote.includes(busqueda);
+
+      const matchesEstado =
+        filtroEstado === "todos" ||
+        estado === filtroEstado;
+
+      return (
+        matchesSearch &&
+        matchesEstado
+      );
+    }
+  );
+
+  // =====================================================
+  // RESUMEN
+  // =====================================================
+
+  const aprobados = controles.filter((control) => {
+    const estado = obtenerEstado(control);
+
+    return (
+      estado.includes("aprob") ||
+      estado.includes("liber")
+    );
+  }).length;
+
+  const rechazados = controles.filter((control) => {
+    const estado = obtenerEstado(control);
+
+    return (
+      estado.includes("rechaz") ||
+      estado.includes("bloque")
+    );
+  }).length;
+
+  const observados =
+    controles.length -
+    aprobados -
+    rechazados;
+
+  // =====================================================
+  // RENDER
+  // =====================================================
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+
+      {/* HEADER */}
+
+      <div className="flex items-start justify-between">
+
         <div>
-          <h1 className="text-gray-900 mb-2">Control de Calidad</h1>
-          <p className="text-gray-600">Inspecciones y validaciones de producto</p>
+          <h1 className="text-2xl font-semibold text-gray-900">
+            Control de Calidad
+          </h1>
+
+          <p className="text-sm text-gray-500 mt-1">
+            Inspecciones y validaciones de producto
+          </p>
         </div>
 
         {canRegister && (
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+          <button
+            onClick={() => {
+            setControlSeleccionado(null);
+            setModalAbierto(true);
+          }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
             <Plus className="w-5 h-5" />
             Nuevo Control
           </button>
         )}
+
       </div>
 
+      {/* TABLA / CONTROLES */}
+
       <div className="bg-white p-6 rounded-xl border border-gray-200">
+
+        {/* FILTROS */}
+
         <div className="flex flex-col md:flex-row gap-4 mb-6">
+
           <div className="flex-1 relative">
+
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+
             <input
               type="text"
-              placeholder="Buscar por lote o producto..."
+              placeholder="Buscar por lote..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) =>
+                setSearchTerm(e.target.value)
+              }
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
+
           </div>
 
           <select
             value={filtroEstado}
-            onChange={(e) => setFiltroEstado(e.target.value)}
+            onChange={(e) =>
+              setFiltroEstado(e.target.value)
+            }
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
-            <option value="todos">Todos los estados</option>
-            <option value="aprobado">Aprobado</option>
-            <option value="observado">Observado</option>
-            <option value="rechazado">Rechazado</option>
+            <option value="todos">
+              Todos los estados
+            </option>
+
+            <option value="aprobado">
+              Aprobado
+            </option>
+
+            <option value="observado">
+              Observado
+            </option>
+
+            <option value="rechazado">
+              Rechazado
+            </option>
           </select>
+
         </div>
 
-        <div className="space-y-4">
-          {calidadFiltrada.map((control) => (
-            <div
-              key={control.id}
-              className={`p-5 rounded-xl border-2 ${
-                control.estado === 'rechazado'
-                  ? 'border-red-200 bg-red-50'
-                  : control.estado === 'observado'
-                  ? 'border-yellow-200 bg-yellow-50'
-                  : 'border-green-200 bg-green-50'
-              }`}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  {getEstadoIcon(control.estado)}
-                  <div>
-                    <h3 className="text-gray-900">Lote {control.loteCodigo} - {control.productoNombre}</h3>
-                    <p className="text-sm text-gray-600">{formatDate(control.fecha)}</p>
-                  </div>
-                </div>
-                <span className={`px-3 py-1 rounded-full text-xs ${getEstadoBadge(control.estado)}`}>
-                  {control.estado.charAt(0).toUpperCase() + control.estado.slice(1)}
-                </span>
-              </div>
+        {/* CONTROLES */}
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-3">
-                <div>
-                  <p className="text-xs text-gray-600">Inspector</p>
-                  <p className="text-sm text-gray-900">{control.inspector}</p>
-                </div>
-                {control.temperatura && (
-                  <div>
-                    <p className="text-xs text-gray-600">Temperatura</p>
-                    <p className="text-sm text-gray-900">{control.temperatura}°C</p>
-                  </div>
-                )}
-                <div>
-                  <p className="text-xs text-gray-600">Aspecto</p>
-                  <p className="text-sm text-gray-900">{control.aspecto}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-600">Olor</p>
-                  <p className="text-sm text-gray-900">{control.olor}</p>
-                </div>
-              </div>
+        {cargando ? (
 
-              {control.observaciones && (
-                <div className="mb-2">
-                  <p className="text-xs text-gray-600 mb-1">Observaciones:</p>
-                  <p className="text-sm text-gray-900">{control.observaciones}</p>
-                </div>
-              )}
+          <div className="text-center py-12 text-gray-500">
+            Cargando controles de calidad...
+          </div>
 
-              {control.incidencias && (
-                <div className="p-3 bg-red-100 rounded-lg">
-                  <p className="text-xs text-red-700 mb-1">Incidencias:</p>
-                  <p className="text-sm text-red-900">{control.incidencias}</p>
-                </div>
-              )}
+        ) : (
 
-              {(() => {
-                const lote = lotesData.find(l => l.id === control.loteId);
-                const estadoProducto = lote?.estadoProductoId ? estadosProductoData.find(e => e.id === lote.estadoProductoId) : null;
+          <div className="space-y-4">
 
-                if (estadoProducto) {
-                  const getColorClass = (color: string) => {
-                    const colors = {
-                      red: 'bg-red-100 text-red-700 border-red-200',
-                      green: 'bg-green-100 text-green-700 border-green-200',
-                      blue: 'bg-blue-100 text-blue-700 border-blue-200',
-                      yellow: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-                      gray: 'bg-gray-100 text-gray-700 border-gray-200',
-                    };
-                    return colors[color as keyof typeof colors] || colors.gray;
-                  };
+            {controlesFiltrados.map(
+              (control) => {
 
-                  return (
-                    <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-2">
-                      <Tag className="w-4 h-4 text-gray-600" />
-                      <span className="text-xs text-gray-600">Estado Producto:</span>
-                      <span className={`px-2 py-1 rounded text-xs border ${getColorClass(estadoProducto.color)}`}>
-                        {estadoProducto.nombre}
-                      </span>
+                const estado =
+                  control.estados_producto
+                    ?.nombre ?? "Sin estado";
+
+                return (
+                  <div
+                    key={control.id}
+                    className={`p-5 rounded-xl border-2 ${getEstadoCard(
+                      control
+                    )}`}
+                  >
+
+                    {/* CABECERA */}
+
+                    <div className="flex items-start justify-between mb-4">
+
+                      <div className="flex items-center gap-3">
+
+                        {getEstadoIcon(
+                          control
+                        )}
+
+                        <div>
+
+                          <h3 className="text-gray-900 font-medium">
+                            Lote{" "}
+                            {control.lotes
+                              ?.codigo_lote ??
+                              "-"}
+
+                          </h3>
+
+                          <p className="text-sm text-gray-600">
+                            {formatDate(
+                              control.fecha
+                            )}
+                          </p>
+
+                        </div>
+
+                      </div>
+
+                      <div className="flex items-center gap-2">
+
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs ${getEstadoBadge(
+                            control
+                          )}`}
+                        >
+                          {estado}
+                        </span>
+
+                        {canRegister && (
+                          <>
+                            <button
+                              onClick={() => {
+                                setControlSeleccionado(control);
+                                setModalAbierto(true);
+                              }}
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Editar"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+
+                            <button
+                              onClick={() => eliminarControl(control.id)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Eliminar"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+
+                      </div>
+
                     </div>
-                  );
-                }
-                return null;
-              })()}
-            </div>
-          ))}
-        </div>
 
-        {calidadFiltrada.length === 0 && (
-          <div className="text-center py-12">
-            <ClipboardCheck className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500">No se encontraron controles</p>
+                    {/* INFORMACIÓN */}
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+                      <div>
+                        <p className="text-xs text-gray-600">
+                          Inspector
+                        </p>
+
+                        <p className="text-sm text-gray-900">
+                          {control.usuarios
+                            ?.nombre ??
+                            "Sin registrar"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-gray-600">
+                          Temperatura
+                        </p>
+
+                        <p className="text-sm text-gray-900">
+                          {control.temperatura !==
+                          null
+                            ? `${control.temperatura} °C`
+                            : "-"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-gray-600">
+                          Estado del producto
+                        </p>
+
+                        <div className="flex items-center gap-2">
+
+                          <Tag className="w-4 h-4 text-gray-500" />
+
+                          <p className="text-sm text-gray-900">
+                            {estado}
+                          </p>
+
+                        </div>
+                      </div>
+
+                    </div>
+
+                    {/* OBSERVACIÓN */}
+
+                    {control.observacion && (
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+
+                        <p className="text-xs text-gray-600 mb-1">
+                          Observación
+                        </p>
+
+                        <p className="text-sm text-gray-900">
+                          {control.observacion}
+                        </p>
+
+                      </div>
+                    )}
+
+                  </div>
+                );
+              }
+            )}
+
           </div>
         )}
+
+        {/* SIN RESULTADOS */}
+
+        {!cargando &&
+          controlesFiltrados.length === 0 && (
+
+            <div className="text-center py-12">
+
+              <ClipboardCheck className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+
+              <p className="text-gray-500">
+                No se encontraron controles
+              </p>
+
+            </div>
+          )}
+
       </div>
 
+      {/* RESUMEN */}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
         <div className="bg-green-50 p-5 rounded-xl border border-green-100">
-          <p className="text-gray-700 mb-2">Aprobados</p>
-          <p className="text-green-700">{calidadData.filter((c) => c.estado === 'aprobado').length}</p>
+          <p className="text-gray-700 mb-2">
+            Aprobados
+          </p>
+
+          <p className="text-green-700 text-xl font-semibold">
+            {aprobados}
+          </p>
         </div>
+
         <div className="bg-yellow-50 p-5 rounded-xl border border-yellow-100">
-          <p className="text-gray-700 mb-2">Con Observaciones</p>
-          <p className="text-yellow-700">{calidadData.filter((c) => c.estado === 'observado').length}</p>
+          <p className="text-gray-700 mb-2">
+            Con Observaciones
+          </p>
+
+          <p className="text-yellow-700 text-xl font-semibold">
+            {observados}
+          </p>
         </div>
+
         <div className="bg-red-50 p-5 rounded-xl border border-red-100">
-          <p className="text-gray-700 mb-2">Rechazados</p>
-          <p className="text-red-700">{calidadData.filter((c) => c.estado === 'rechazado').length}</p>
+          <p className="text-gray-700 mb-2">
+            Rechazados
+          </p>
+
+          <p className="text-red-700 text-xl font-semibold">
+            {rechazados}
+          </p>
         </div>
+
       </div>
+
+      {/* MODAL */}
+
+      {modalAbierto && (
+        <NuevoControlCalidadModal
+          control={controlSeleccionado}
+          onClose={() => {
+            setModalAbierto(false);
+            setControlSeleccionado(null);
+          }}
+          onSuccess={cargarControles}
+        />
+      )}
+
     </div>
   );
 }
