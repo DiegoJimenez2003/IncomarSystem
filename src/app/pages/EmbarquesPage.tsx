@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Search, Plus, Ship, Trash2 } from "lucide-react";
+import { Search, Plus, Ship, Trash2, Pencil } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../utils/supabase";
 import { NuevoEmbarqueModal } from "../components/Productos/NuevoEmbarqueModal";
+import { EditarEmbarqueModal } from "../components/Productos/EditarEmbarqueModal";
 
 interface Embarque {
   id: string;
@@ -30,6 +31,7 @@ export function EmbarquesPage() {
   const [filtroEstado, setFiltroEstado] = useState("todos");
   const [cargando, setCargando] = useState(true);
   const [modalAbierto, setModalAbierto] = useState(false);
+  const [embarqueEditando, setEmbarqueEditando] = useState<Embarque | null>(null);
 
   const canManage =
     user?.rol === "administrador" ||
@@ -373,7 +375,15 @@ export function EmbarquesPage() {
                       )}
                     </td>
                     {canManage && (
-                      <td className="py-3 px-4">
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setEmbarqueEditando(embarque)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Editar"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => handleEliminar(embarque.id)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -381,8 +391,9 @@ export function EmbarquesPage() {
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
-                      </td>
-                    )}
+                      </div>
+                    </td>
+                  )}
                   </tr>
                 ))
               )}
@@ -420,6 +431,14 @@ export function EmbarquesPage() {
       {modalAbierto && (
         <NuevoEmbarqueModal
           onClose={() => setModalAbierto(false)}
+          onSuccess={cargarEmbarques}
+        />
+      )}
+
+      {embarqueEditando && (
+        <EditarEmbarqueModal
+          embarque={embarqueEditando}
+          onClose={() => setEmbarqueEditando(null)}
           onSuccess={cargarEmbarques}
         />
       )}
