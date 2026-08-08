@@ -201,11 +201,15 @@ return (
 
         <div>
             <h2 className="text-lg font-semibold text-gray-900">
-            Nuevo Control de Calidad
+            {control?.id
+                ? "Editar Control de Calidad"
+                : "Nuevo Control de Calidad"}
             </h2>
 
             <p className="text-sm text-gray-500">
-            Registre la inspección del lote
+            {control?.id
+                ? "Modifique la información de la inspección"
+                : "Registre la inspección del lote"}
             </p>
         </div>
         </div>
@@ -339,6 +343,8 @@ return (
 
         {guardando
             ? "Guardando..."
+            : control?.id
+            ? "Guardar Cambios"
             : "Registrar Control"}
         </button>
 
