@@ -110,12 +110,6 @@ export function Sidebar({ isOpen }: SidebarProps) {
       roles: ['administrador', 'supervisor', 'calidad', 'secretaria'],
     },
     {
-      name: 'Reportes',
-      path: '/reportes',
-      icon: FileText,
-      roles: ['administrador', 'supervisor'],
-    },
-    {
       name: 'Productos',
       path: '/productos',
       icon: Fish,

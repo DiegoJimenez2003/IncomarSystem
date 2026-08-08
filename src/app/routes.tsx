@@ -23,7 +23,6 @@ import { EstadosProductoPage } from './pages/EstadosProductoPage';
 import { DocumentosPage } from './pages/DocumentosPage';
 import { EmbarquesPage } from './pages/EmbarquesPage';
 import { TrazabilidadPage } from './pages/TrazabilidadPage';
-import { ReportesPage } from './pages/ReportesPage';
 import { ProductosPage } from './pages/ProductosPage';
 import { PlantasPage } from './pages/PlantasPage';
 import { UsuariosPage } from './pages/UsuariosPage';
@@ -187,14 +186,6 @@ export const router = createBrowserRouter([
             element: <TrazabilidadPage />,
           },
 
-          // ======================================================
-          // MÓDULO REPORTES
-          // ======================================================
-
-          {
-            path: '/reportes',
-            element: <ReportesPage />,
-          },
 
           // ======================================================
           // MÓDULO PRODUCTOS
