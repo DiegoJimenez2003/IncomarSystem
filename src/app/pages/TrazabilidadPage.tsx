@@ -679,7 +679,7 @@ export function TrazabilidadPage() {
     y += 7;
   
     pdf.setFont('helvetica', 'bold');
-    pdf.text('Kilos Enviados:', 18, y);
+    pdf.text('Kilos Importados:', 18, y);
     pdf.setFont('helvetica', 'normal');
     pdf.text(`${kilosEnviados.toLocaleString()} kg`, 55, y);
   
@@ -768,7 +768,7 @@ export function TrazabilidadPage() {
     // ======================================================
     if (calidadLote.length > 0) {
       checkPageBreak(20);
-      tituloSeccion('CONTROL DE CALIDAD', VERDE);
+      tituloSeccion('CONTROL DE CALIDAD/ RECEPCIÓN', VERDE);
   
       autoTable(pdf, {
         startY: y,
