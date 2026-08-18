@@ -7,40 +7,28 @@ import jsPDF from 'jspdf';
 import { logoIncomar } from '../../utils/LogoBase64';
 import { AsignarRackModal } from '../components/Productos/AsignarRackModal';
 import { Warehouse } from 'lucide-react'; // agrégalo junto a los otros imports de lucide-react
-
+import autoTable from 'jspdf-autotable';
 
   interface Lote {
-    id: string;
+  id: string;
+  codigo_lote: string;
+  especie_id: string;
+  presentacion_id: string;
+  estado_producto_id: string;
+  planta_id: string;
+  turno_id: string;
+  fecha_produccion: string;
+  fecha_vencimiento: string | null;
+  kilos_netos: number;
+  cantidad_cajas: number | null;
+  temperatura: number | null;
+  observaciones: string | null;
 
-    codigo_lote: string;
-
-    especie_id: string;
-    presentacion_id: string;
-    estado_producto_id: string;
-    planta_id: string;
-    turno_id: string;
-
-    fecha_produccion: string;
-    fecha_vencimiento: string | null;
-
-    kilos_netos: number;
-    cantidad_cajas: number | null;
-
-    temperatura: number | null;
-    observaciones: string | null;
-
-    especie?: {
-      nombre: string;
-    };
-
-    planta?: {
-      nombre: string;
-    };
-
-    estado_producto?: {
-      nombre: string;
-    };
-  }
+  especie?: { nombre: string };
+  presentacion?: { nombre: string }; // NUEVO
+  planta?: { nombre: string };
+  estado_producto?: { nombre: string };
+}
 
   export function LotesPage() {
     const { user } = useAuth();
@@ -109,7 +97,7 @@ import { Warehouse } from 'lucide-react'; // agrégalo junto a los otros imports
     DESCARGAR FICHA OFICIAL DEL LOTE
 ========================================================== */
 
-const descargarPDF = (lote: Lote) => {
+const descargarPDF = async (lote: Lote) => {
 
   const pdf = new jsPDF({
     orientation: "portrait",
@@ -117,14 +105,61 @@ const descargarPDF = (lote: Lote) => {
     format: "a4",
   });
 
-  // ======================================================
-  // COLORES CORPORATIVOS
-  // ======================================================
-
   const AZUL = [37, 99, 235];
+  const MORADO = [124, 58, 237];
   const GRIS = [107, 114, 128];
   const BORDE = [220, 220, 220];
   const FONDO = [245, 247, 250];
+
+  // ======================================================
+  // 1) DATOS DE INVENTARIO / RACKS (nuevo)
+  // ======================================================
+
+  // Todo el detalle_lote con stock actual (kilos > 0), con info de rack embebida
+  const { data: detalleTodos, error: errDetalle } = await supabase
+    .from('detalle_lote')
+    .select('lote_id, rack_id, kilos, cajas, racks:rack_id ( codigo, ubicacion )')
+    .gt('kilos', 0);
+
+  if (errDetalle) {
+    console.error(errDetalle);
+  }
+
+  const detalle = detalleTodos ?? [];
+
+  // Racks asociados a ESTE lote específico
+  const racksDelLote = detalle.filter((d: any) => d.lote_id === lote.id);
+
+  // Lotes que actualmente tienen stock en inventario (sistema completo)
+  const lotesIdsEnInventario = new Set(detalle.map((d: any) => d.lote_id));
+  const totalLotesInventario = lotesIdsEnInventario.size;
+
+  // Desglose por grupo especie + presentación, usando los lotes ya cargados en memoria
+  const grupos = new Map<string, { especie: string; presentacion: string; cantidad: number }>();
+
+  lotes
+    .filter((l) => lotesIdsEnInventario.has(l.id))
+    .forEach((l) => {
+      const especieNombre = l.especie?.nombre ?? 'Sin especie';
+      const presentacionNombre = l.presentacion?.nombre ?? 'Sin presentación';
+      const key = `${especieNombre}__${presentacionNombre}`;
+
+      const actual = grupos.get(key);
+      if (actual) {
+        actual.cantidad += 1;
+      } else {
+        grupos.set(key, {
+          especie: especieNombre,
+          presentacion: presentacionNombre,
+          cantidad: 1,
+        });
+      }
+    });
+
+  const gruposOrdenados = Array.from(grupos.values()).sort((a, b) => {
+    if (a.especie === b.especie) return a.presentacion.localeCompare(b.presentacion);
+    return a.especie.localeCompare(b.especie);
+  });
 
   // ======================================================
   // FONDO ENCABEZADO
@@ -133,247 +168,176 @@ const descargarPDF = (lote: Lote) => {
   pdf.setFillColor(AZUL[0], AZUL[1], AZUL[2]);
   pdf.rect(0, 0, 210, 35, "F");
 
-  // ======================================================
-  // LOGO
-  // ======================================================
-
-  pdf.addImage(
-    logoIncomar,
-    "PNG",
-    10,
-    5,
-    22,
-    22
-  );
-
-  // ======================================================
-  // TITULO
-  // ======================================================
+  pdf.addImage(logoIncomar, "PNG", 10, 5, 22, 22);
 
   pdf.setTextColor(255, 255, 255);
-
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(18);
-
-  pdf.text(
-    "FICHA DE TRAZABILIDAD",
-    40,
-    15
-  );
+  pdf.text("FICHA DE TRAZABILIDAD", 40, 15);
 
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(11);
-
-  pdf.text(
-    "Sistema de Gestión INCOMAR",
-    40,
-    22
-  );
+  pdf.text("Sistema de Gestión INCOMAR", 40, 22);
 
   pdf.setFont("helvetica", "bold");
-
-  pdf.text(
-    `Lote ${lote.codigo_lote}`,
-    40,
-    29
-  );
-
-  // ======================================================
-  // FECHA DE EMISIÓN
-  // ======================================================
+  pdf.text(`Lote ${lote.codigo_lote}`, 40, 29);
 
   pdf.setFontSize(9);
-
-  pdf.text(
-    `Emitido: ${new Date().toLocaleString("es-CL")}`,
-    145,
-    28
-  );
-
-  // ======================================================
-  // COMIENZO DEL CONTENIDO
-  // ======================================================
+  pdf.text(`Emitido: ${new Date().toLocaleString("es-CL")}`, 145, 28);
 
   let y = 45;
 
-  // ======================================================
-  // FUNCIÓN PARA DIBUJAR TÍTULOS DE SECCIÓN
-  // ======================================================
+  const checkPageBreak = (alturaNecesaria: number) => {
+    if (y + alturaNecesaria > 280) {
+      pdf.addPage();
+      y = 20;
+    }
+  };
 
-  const tituloSeccion = (titulo: string) => {
-
+  const tituloSeccion = (titulo: string, color = AZUL) => {
+    checkPageBreak(15);
     pdf.setFillColor(FONDO[0], FONDO[1], FONDO[2]);
-
     pdf.setDrawColor(BORDE[0], BORDE[1], BORDE[2]);
+    pdf.roundedRect(12, y, 186, 10, 2, 2, "FD");
 
-    pdf.roundedRect(
-      12,
-      y,
-      186,
-      10,
-      2,
-      2,
-      "FD"
-    );
-
-    pdf.setTextColor(AZUL[0], AZUL[1], AZUL[2]);
-
+    pdf.setTextColor(color[0], color[1], color[2]);
     pdf.setFont("helvetica", "bold");
-
     pdf.setFontSize(12);
-
-    pdf.text(
-      titulo,
-      18,
-      y + 6.5
-    );
+    pdf.text(titulo, 18, y + 6.5);
 
     y += 15;
-
   };
 
-  // ======================================================
-  // FUNCIÓN PARA DIBUJAR UNA FILA
-  // ======================================================
-
-  const fila = (
-    izquierda: string,
-    valorIzq: any,
-    derecha: string,
-    valorDer: any
-  ) => {
-
+  const fila = (izquierda: string, valorIzq: any, derecha: string, valorDer: any) => {
     pdf.setTextColor(0, 0, 0);
-
     pdf.setFont("helvetica", "bold");
-
     pdf.setFontSize(10);
-
-    pdf.text(
-      izquierda,
-      18,
-      y
-    );
+    pdf.text(izquierda, 18, y);
 
     pdf.setFont("helvetica", "normal");
-
-    pdf.text(
-      String(valorIzq ?? "-"),
-      52,
-      y
-    );
+    pdf.text(String(valorIzq ?? "-"), 52, y);
 
     pdf.setFont("helvetica", "bold");
-
-    pdf.text(
-      derecha,
-      112,
-      y
-    );
+    pdf.text(derecha, 112, y);
 
     pdf.setFont("helvetica", "normal");
-
-    pdf.text(
-      String(valorDer ?? "-"),
-      152,
-      y
-    );
+    pdf.text(String(valorDer ?? "-"), 152, y);
 
     y += 8;
-
   };
 
-    // ======================================================
+  // ======================================================
   // INFORMACIÓN GENERAL
   // ======================================================
 
   tituloSeccion("INFORMACIÓN GENERAL");
 
-  fila(
-    "Código",
-    lote.codigo_lote,
-    "Estado",
-    lote.estado_producto?.nombre ?? "-"
-  );
+  fila("Código", lote.codigo_lote, "Estado", lote.estado_producto?.nombre ?? "-");
+  fila("Producto", lote.especie?.nombre ?? "-", "Presentación", lote.presentacion?.nombre ?? "-");
+  fila("Planta", lote.planta?.nombre ?? "-", "", "");
 
-  fila(
-    "Producto",
-    lote.especie?.nombre ?? "-",
-    "Planta",
-    lote.planta?.nombre ?? "-"
-  );
-
-  y += 5;
+  y += 2;
 
   // ======================================================
-  // PRODUCCIÓN
+  // DATOS DE PRODUCCIÓN
   // ======================================================
 
   tituloSeccion("DATOS DE PRODUCCIÓN");
 
   fila(
-    "Producción",
-    formatDate(lote.fecha_produccion),
-    "Vencimiento",
-    lote.fecha_vencimiento
-      ? formatDate(lote.fecha_vencimiento)
-      : "-"
+    "Producción", formatDate(lote.fecha_produccion),
+    "Vencimiento", lote.fecha_vencimiento ? formatDate(lote.fecha_vencimiento) : "-"
   );
 
-  fila(
-    "Kilos",
-    `${lote.kilos_netos} kg`,
-    "Cajas",
-    lote.cantidad_cajas ?? "-"
-  );
+  fila("Kilos", `${lote.kilos_netos} kg`, "Cajas", lote.cantidad_cajas ?? "-");
 
   fila(
-    "Temperatura",
-    lote.temperatura != null
-      ? `${lote.temperatura} °C`
-      : "-",
-    "Peso Neto",
-    `${lote.kilos_netos} kg`
+    "Temperatura", lote.temperatura != null ? `${lote.temperatura} °C` : "-",
+    "Peso Neto", `${lote.kilos_netos} kg`
   );
 
   y += 5;
 
   // ======================================================
+  // RACKS ASOCIADOS A ESTE LOTE (nuevo)
+  // ======================================================
+
+  checkPageBreak(20);
+  tituloSeccion("RACKS ASOCIADOS AL LOTE", MORADO);
+
+  if (racksDelLote.length > 0) {
+    autoTable(pdf, {
+      startY: y,
+      margin: { left: 12, right: 12 },
+      head: [['Rack', 'Ubicación', 'Kilos', 'Cajas']],
+      body: racksDelLote.map((d: any) => [
+        d.racks?.codigo ?? 'Sin registrar',
+        d.racks?.ubicacion ?? '-',
+        `${(d.kilos ?? 0).toLocaleString()} kg`,
+        d.cajas !== null ? String(d.cajas) : '-',
+      ]),
+      headStyles: { fillColor: MORADO as [number, number, number] },
+      styles: { fontSize: 9 },
+      alternateRowStyles: { fillColor: FONDO as [number, number, number] },
+    });
+    y = (pdf as any).lastAutoTable.finalY + 6;
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(10);
+    pdf.setTextColor(0, 0, 0);
+    pdf.text(`Total de racks asociados: ${new Set(racksDelLote.map((d: any) => d.rack_id)).size}`, 18, y);
+    y += 10;
+  } else {
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    pdf.setTextColor(GRIS[0], GRIS[1], GRIS[2]);
+    pdf.text("Este lote no tiene racks asignados actualmente.", 18, y);
+    y += 12;
+  }
+
+  // ======================================================
+  // INVENTARIO GENERAL (nuevo)
+  // ======================================================
+
+  checkPageBreak(20);
+  tituloSeccion("INVENTARIO GENERAL", AZUL);
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(10);
+  pdf.setTextColor(0, 0, 0);
+  pdf.text(`Total de lotes actualmente en inventario: ${totalLotesInventario}`, 18, y);
+  y += 10;
+
+  if (gruposOrdenados.length > 0) {
+    autoTable(pdf, {
+      startY: y,
+      margin: { left: 12, right: 12 },
+      head: [['Especie', 'Presentación', 'Lotes en inventario']],
+      body: gruposOrdenados.map((g) => [g.especie, g.presentacion, String(g.cantidad)]),
+      headStyles: { fillColor: AZUL as [number, number, number] },
+      styles: { fontSize: 9 },
+      alternateRowStyles: { fillColor: FONDO as [number, number, number] },
+    });
+    y = (pdf as any).lastAutoTable.finalY + 10;
+  }
+
+  // ======================================================
   // OBSERVACIONES
   // ======================================================
 
+  checkPageBreak(40);
   tituloSeccion("OBSERVACIONES");
 
-  pdf.setDrawColor(220,220,220);
+  pdf.setDrawColor(220, 220, 220);
+  pdf.roundedRect(15, y, 180, 30, 2, 2);
 
-  pdf.roundedRect(
-    15,
-    y,
-    180,
-    30,
-    2,
-    2
-  );
-
-  pdf.setFont("helvetica","normal");
-
+  pdf.setFont("helvetica", "normal");
   pdf.setFontSize(10);
+  pdf.setTextColor(0, 0, 0);
 
-  const texto =
-    lote.observaciones?.trim()
-      ? lote.observaciones
-      : "Sin observaciones registradas.";
-
-  const lineas = pdf.splitTextToSize(
-    texto,
-    170
-  );
-
-  pdf.text(
-    lineas,
-    20,
-    y + 8
-  );
+  const texto = lote.observaciones?.trim() ? lote.observaciones : "Sin observaciones registradas.";
+  const lineas = pdf.splitTextToSize(texto, 170);
+  pdf.text(lineas, 20, y + 8);
 
   y += 40;
 
@@ -381,34 +345,16 @@ const descargarPDF = (lote: Lote) => {
   // PIE DE DOCUMENTO
   // ======================================================
 
+  checkPageBreak(20);
   pdf.setDrawColor(200);
-
-  pdf.line(
-    15,
-    y,
-    195,
-    y
-  );
-
+  pdf.line(15, y, 195, y);
   y += 8;
 
-  pdf.setFont("helvetica","italic");
-
+  pdf.setFont("helvetica", "italic");
   pdf.setFontSize(9);
-
   pdf.setTextColor(120);
-
-  pdf.text(
-    "Documento generado automáticamente por el Sistema de Gestión INCOMAR.",
-    15,
-    y
-  );
-
-  pdf.text(
-    "Uso interno - Información confidencial.",
-    15,
-    y + 6
-  );
+  pdf.text("Documento generado automáticamente por el Sistema de Gestión INCOMAR.", 15, y);
+  pdf.text("Uso interno - Información confidencial.", 15, y + 6);
 
   // ======================================================
   // DESCARGAR PDF
@@ -430,22 +376,15 @@ const descargarPDF = (lote: Lote) => {
       setLoading(true);
 
       const { data, error } = await supabase
-        .from('lotes')
-        .select(`
-          *,
-          especie:especie_id (
-            nombre
-          ),
-          planta:planta_id (
-            nombre
-          ),
-          estado_producto:estado_producto_id (
-            nombre
-          )
-        `)
-        .order('created_at', {
-          ascending: false
-        });
+      .from('lotes')
+      .select(`
+        *,
+        especie:especie_id ( nombre ),
+        presentacion:presentacion_id ( nombre ),
+        planta:planta_id ( nombre ),
+        estado_producto:estado_producto_id ( nombre )
+      `)
+      .order('created_at', { ascending: false });
 
       if (error) {
         console.error(error);
@@ -745,9 +684,9 @@ const descargarPDF = (lote: Lote) => {
             <div className="flex justify-end mt-6">
 
               <button
-                  onClick={() => {
+                  onClick={async () => {
                       if (loteDetalle) {
-                          descargarPDF(loteDetalle);
+                          await descargarPDF(loteDetalle);
                       }
                   }}
                   className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"

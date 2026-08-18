@@ -43,23 +43,25 @@ export function RacksPage() {
   const [rackEditar, setRackEditar] = useState<any | null>(null);
 
   async function guardarRack(rack: {
-    id?: number;
+    id?: string;
     codigo: string;
     ubicacion: string;
     capacidad_kg: number;
     activo: boolean;
+    bodega: string | null;
   }) {
     if (rack.id) {
       // Editar rack existente
       const { error } = await supabase
-        .from("racks")
-        .update({
-          codigo: rack.codigo,
-          ubicacion: rack.ubicacion,
-          capacidad_kg: rack.capacidad_kg,
-          activo: rack.activo,
-        })
-        .eq("id", rack.id);
+      .from("racks")
+      .update({
+        codigo: rack.codigo,
+        ubicacion: rack.ubicacion,
+        capacidad_kg: rack.capacidad_kg,
+        activo: rack.activo,
+        bodega: rack.bodega,
+      })
+      .eq("id", rack.id);
 
       if (error) {
         console.error(error);
@@ -203,8 +205,29 @@ export function RacksPage() {
                       <Warehouse className="w-5 h-5 text-blue-600" />
                     </div>
                     <div>
-                      <h3 className="text-gray-900">{rack.codigo}</h3>
-                      <p className="text-xs text-gray-600">{rack.ubicacion}</p>
+                      <h3 className="text-gray-900">
+                        {rack.codigo}
+                      </h3>
+
+                      <p className="text-sm text-gray-600">
+                        {rack.ubicacion || "Sin ubicación"}
+                      </p>
+
+                      <span
+                        className={`inline-block mt-1 px-2 py-1 rounded text-xs ${
+                          rack.bodega === "PAC"
+                            ? "bg-blue-100 text-blue-700"
+                            : rack.bodega === "NO_PAC"
+                            ? "bg-purple-100 text-purple-700"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {rack.bodega === "PAC"
+                          ? "Bodega PAC"
+                          : rack.bodega === "NO_PAC"
+                          ? "Bodega NO PAC"
+                          : "Sin bodega"}
+                      </span>
                     </div>
                   </div>
 

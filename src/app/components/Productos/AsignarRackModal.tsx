@@ -3,12 +3,13 @@ import { Warehouse } from 'lucide-react';
 import { supabase } from '../../../utils/supabase';
 
 interface Rack {
-id: string;
-codigo: string;
-ubicacion: string;
-capacidad_kg: number;
-activo: boolean;
-}
+    id: string;
+    codigo: string;
+    ubicacion: string;
+    capacidad_kg: number;
+    activo: boolean;
+    bodega: string | null;
+    }
 
 interface Lote {
 id: string;
@@ -41,7 +42,7 @@ cargarAsignacionesExistentes();
 async function cargarRacks() {
 const { data, error } = await supabase
     .from('racks')
-    .select('id, codigo, ubicacion, capacidad_kg, activo')
+    .select('id, codigo, ubicacion, capacidad_kg, activo, bodega')
     .eq('activo', true)
     .order('codigo');
 
@@ -62,7 +63,7 @@ const { data, error } = await supabase
     id,
     kilos,
     cajas,
-    racks ( codigo, ubicacion )
+    racks ( codigo, ubicacion, bodega )
     `)
     .eq('lote_id', lote.id);
 
@@ -243,9 +244,11 @@ return (
             <option value="">Seleccione un rack</option>
             {racks.map((r) => (
                 <option key={r.id} value={r.id}>
-                {r.codigo} - {r.ubicacion}
+                    {r.codigo} - {r.ubicacion} (
+                    {r.bodega === "PAC" ? "PAC" : "NO PAC"}
+                    )
                 </option>
-            ))}
+                ))}
             </select>
         </div>
 
@@ -311,7 +314,14 @@ return (
                     <div>
                     <p className="text-sm text-gray-900">
                         {a.racks?.codigo} - {a.racks?.ubicacion}
-                    </p>
+                        </p>
+
+                        <p className="text-xs text-gray-500">
+                        Bodega:{" "}
+                        {a.racks?.bodega === "PAC"
+                            ? "PAC"
+                            : "NO PAC"}
+                        </p>
                     <p className="text-xs text-gray-500">
                         {Number(a.kilos).toLocaleString()} kg
                         {a.cajas ? ` · ${a.cajas} cajas` : ''}
