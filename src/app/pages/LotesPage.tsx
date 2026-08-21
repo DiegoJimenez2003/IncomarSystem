@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Search, Plus, Eye, Edit2,Trash2, PackageCheck } from 'lucide-react';
+import { Search, Plus, Eye, Edit2,Trash2, PackageCheck, AlertTriangle, FileDown } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../utils/supabase';
 import { LoteModal } from '../components/Productos/LoteModal';
@@ -51,6 +51,11 @@ import autoTable from 'jspdf-autotable';
     useState<Lote | null>(null);
 
     const [loteAsignar, setLoteAsignar] = useState<Lote | null>(null);
+
+    const [loteEliminar, setLoteEliminar] = useState<Lote | null>(null);
+    const [eliminando, setEliminando] = useState(false);
+
+    const [generandoPDFGeneral, setGenerandoPDFGeneral] = useState(false);
 
   const lotesFiltrados = lotes.filter((lote) => {
 
@@ -365,6 +370,298 @@ const descargarPDF = async (lote: Lote) => {
 };
 
 
+  /* ==========================================================
+    GENERAR PDF GENERAL - TODOS LOS LOTES AGRUPADOS POR ESPECIE
+    con estado de bodega (PAC / NO PAC / sin asignar)
+========================================================== */
+
+const generarPDFGeneral = async () => {
+  try {
+    setGenerandoPDFGeneral(true);
+
+    const pdf = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4",
+    });
+
+    const AZUL = [37, 99, 235];
+    const MORADO = [124, 58, 237];
+    const VERDE = [22, 163, 74];
+    const GRIS = [107, 114, 128];
+    const BORDE = [220, 220, 220];
+    const FONDO = [245, 247, 250];
+    const PAGE_W = 297;
+    const MARGIN = 12;
+
+    // ======================================================
+    // OBTENER ASIGNACIONES DE RACK (con bodega) PARA TODOS LOS LOTES
+    // ======================================================
+
+    const { data: detalleTodos, error: errDetalle } = await supabase
+      .from('detalle_lote')
+      .select('lote_id, rack_id, kilos, cajas, racks:rack_id ( codigo, bodega )');
+
+    if (errDetalle) {
+      console.error(errDetalle);
+    }
+
+    const detalle = detalleTodos ?? [];
+
+    // Mapa lote_id -> info agregada de sus asignaciones a racks
+    const infoPorLote = new Map<
+      string,
+      { kilosAsignados: number; racks: string[]; bodegas: Set<string> }
+    >();
+
+    detalle.forEach((d: any) => {
+      const actual = infoPorLote.get(d.lote_id) ?? {
+        kilosAsignados: 0,
+        racks: [],
+        bodegas: new Set<string>(),
+      };
+      actual.kilosAsignados += Number(d.kilos) || 0;
+      if (d.racks?.codigo) actual.racks.push(d.racks.codigo);
+      if (d.racks?.bodega) actual.bodegas.add(d.racks.bodega);
+      infoPorLote.set(d.lote_id, actual);
+    });
+
+    const estadoBodegaLote = (loteId: string) => {
+      const info = infoPorLote.get(loteId);
+      if (!info || info.bodegas.size === 0) return 'SIN_ASIGNAR';
+      if (info.bodegas.has('PAC') && info.bodegas.has('NO_PAC')) return 'MIXTO';
+      if (info.bodegas.has('PAC')) return 'PAC';
+      if (info.bodegas.has('NO_PAC')) return 'NO_PAC';
+      return 'SIN_ASIGNAR';
+    };
+
+    const bodegaLabelLote = (estado: string) => {
+      if (estado === 'PAC') return 'PAC';
+      if (estado === 'NO_PAC') return 'NO PAC';
+      if (estado === 'MIXTO') return 'PAC + NO PAC';
+      return 'Sin asignar';
+    };
+
+    // ======================================================
+    // AGRUPAR LOTES POR ESPECIE
+    // ======================================================
+
+    const gruposPorEspecie = new Map<string, Lote[]>();
+
+    lotes.forEach((l) => {
+      const nombreEspecie = l.especie?.nombre ?? 'Sin especie';
+      const actual = gruposPorEspecie.get(nombreEspecie) ?? [];
+      actual.push(l);
+      gruposPorEspecie.set(nombreEspecie, actual);
+    });
+
+    const especiesOrdenadas = Array.from(gruposPorEspecie.keys()).sort((a, b) =>
+      a.localeCompare(b)
+    );
+
+    // ======================================================
+    // TOTALES GENERALES
+    // ======================================================
+
+    let totalKilosGeneral = 0;
+    let totalCajasGeneral = 0;
+    let kilosPACGeneral = 0;
+    let kilosNoPACGeneral = 0;
+    let kilosSinAsignarGeneral = 0;
+
+    lotes.forEach((l) => {
+      const kilos = Number(l.kilos_netos) || 0;
+      totalKilosGeneral += kilos;
+      totalCajasGeneral += Number(l.cantidad_cajas) || 0;
+
+      const info = infoPorLote.get(l.id);
+      const asignados = info?.kilosAsignados ?? 0;
+      const sinAsignar = Math.max(kilos - asignados, 0);
+      kilosSinAsignarGeneral += sinAsignar;
+
+      detalle
+        .filter((d: any) => d.lote_id === l.id)
+        .forEach((d: any) => {
+          const kg = Number(d.kilos) || 0;
+          if (d.racks?.bodega === 'PAC') kilosPACGeneral += kg;
+          else if (d.racks?.bodega === 'NO_PAC') kilosNoPACGeneral += kg;
+        });
+    });
+
+    // ======================================================
+    // ENCABEZADO
+    // ======================================================
+
+    pdf.setFillColor(AZUL[0], AZUL[1], AZUL[2]);
+    pdf.rect(0, 0, PAGE_W, 32, "F");
+
+    pdf.addImage(logoIncomar, "PNG", 10, 5, 20, 20);
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(18);
+    pdf.text("REPORTE GENERAL DE LOTES", 36, 14);
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    pdf.text("Sistema de Gestión INCOMAR — Panorama de inventario por especie y bodega", 36, 21);
+
+    pdf.setFontSize(9);
+    pdf.text(`Emitido: ${new Date().toLocaleString("es-CL")}`, 36, 27);
+
+    let y = 40;
+
+    const checkPageBreak = (alturaNecesaria: number) => {
+      if (y + alturaNecesaria > 195) {
+        pdf.addPage();
+        y = 15;
+      }
+    };
+
+    const tituloSeccion = (titulo: string, color = AZUL) => {
+      checkPageBreak(14);
+      pdf.setFillColor(FONDO[0], FONDO[1], FONDO[2]);
+      pdf.setDrawColor(BORDE[0], BORDE[1], BORDE[2]);
+      pdf.roundedRect(MARGIN, y, PAGE_W - MARGIN * 2, 9, 2, 2, "FD");
+
+      pdf.setTextColor(color[0], color[1], color[2]);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(12);
+      pdf.text(titulo, MARGIN + 4, y + 6.2);
+
+      y += 14;
+    };
+
+    // ======================================================
+    // RESUMEN GENERAL
+    // ======================================================
+
+    tituloSeccion("RESUMEN GENERAL");
+
+    autoTable(pdf, {
+      startY: y,
+      margin: { left: MARGIN, right: MARGIN },
+      head: [[
+        'Total Lotes',
+        'Total Kilos',
+        'Total Cajas',
+        'Kilos en Bodega PAC',
+        'Kilos en Bodega NO PAC',
+        'Kilos sin asignar a rack',
+      ]],
+      body: [[
+        String(lotes.length),
+        `${totalKilosGeneral.toLocaleString()} kg`,
+        String(totalCajasGeneral),
+        `${kilosPACGeneral.toLocaleString()} kg`,
+        `${kilosNoPACGeneral.toLocaleString()} kg`,
+        `${kilosSinAsignarGeneral.toLocaleString()} kg`,
+      ]],
+      headStyles: { fillColor: AZUL as [number, number, number] },
+      styles: { fontSize: 9, halign: 'center' },
+      alternateRowStyles: { fillColor: FONDO as [number, number, number] },
+    });
+
+    y = (pdf as any).lastAutoTable.finalY + 10;
+
+    // ======================================================
+    // UNA SECCIÓN POR CADA ESPECIE
+    // ======================================================
+
+    especiesOrdenadas.forEach((nombreEspecie) => {
+      const lotesEspecie = gruposPorEspecie.get(nombreEspecie)!;
+
+      const kilosEspecie = lotesEspecie.reduce(
+        (sum, l) => sum + (Number(l.kilos_netos) || 0), 0
+      );
+      const cajasEspecie = lotesEspecie.reduce(
+        (sum, l) => sum + (Number(l.cantidad_cajas) || 0), 0
+      );
+
+      let kilosPACEspecie = 0;
+      let kilosNoPACEspecie = 0;
+
+      lotesEspecie.forEach((l) => {
+        detalle
+          .filter((d: any) => d.lote_id === l.id)
+          .forEach((d: any) => {
+            const kg = Number(d.kilos) || 0;
+            if (d.racks?.bodega === 'PAC') kilosPACEspecie += kg;
+            else if (d.racks?.bodega === 'NO_PAC') kilosNoPACEspecie += kg;
+          });
+      });
+
+      checkPageBreak(20);
+      tituloSeccion(
+        `ESPECIE: ${nombreEspecie.toUpperCase()}  —  ${lotesEspecie.length} lote(s)  ·  ${kilosEspecie.toLocaleString()} kg  ·  ${cajasEspecie} caja(s)  ·  PAC: ${kilosPACEspecie.toLocaleString()} kg  ·  NO PAC: ${kilosNoPACEspecie.toLocaleString()} kg`,
+        MORADO
+      );
+
+      autoTable(pdf, {
+        startY: y,
+        margin: { left: MARGIN, right: MARGIN },
+        head: [[
+          'Lote', 'Presentación', 'Planta', 'Fecha Producción',
+          'Estado', 'Kilos', 'Cajas', 'Racks asignados', 'Bodega',
+        ]],
+        body: lotesEspecie
+          .slice()
+          .sort((a, b) => a.codigo_lote.localeCompare(b.codigo_lote))
+          .map((l) => {
+            const info = infoPorLote.get(l.id);
+            const estadoBodega = estadoBodegaLote(l.id);
+
+            return [
+              l.codigo_lote,
+              l.presentacion?.nombre ?? '-',
+              l.planta?.nombre ?? '-',
+              formatDate(l.fecha_produccion),
+              l.estado_producto?.nombre ?? '-',
+              `${(Number(l.kilos_netos) || 0).toLocaleString()} kg`,
+              String(l.cantidad_cajas ?? '-'),
+              info && info.racks.length > 0
+                ? Array.from(new Set(info.racks)).join(', ')
+                : 'Sin asignar',
+              bodegaLabelLote(estadoBodega),
+            ];
+          }),
+        headStyles: { fillColor: VERDE as [number, number, number] },
+        styles: { fontSize: 8 },
+        alternateRowStyles: { fillColor: FONDO as [number, number, number] },
+        columnStyles: {
+          5: { halign: 'right' },
+          6: { halign: 'right' },
+        },
+      });
+
+      y = (pdf as any).lastAutoTable.finalY + 10;
+    });
+
+    // ======================================================
+    // PIE DE DOCUMENTO
+    // ======================================================
+
+    checkPageBreak(16);
+    pdf.setDrawColor(200);
+    pdf.line(MARGIN, y, PAGE_W - MARGIN, y);
+    y += 7;
+
+    pdf.setFont("helvetica", "italic");
+    pdf.setFontSize(8);
+    pdf.setTextColor(GRIS[0], GRIS[1], GRIS[2]);
+    pdf.text(
+      "Documento generado automáticamente por el Sistema de Gestión INCOMAR. Uso interno - Información confidencial.",
+      MARGIN,
+      y
+    );
+
+    pdf.save(`Reporte_General_Lotes_${new Date().toISOString().slice(0, 10)}.pdf`);
+  } finally {
+    setGenerandoPDFGeneral(false);
+  }
+};
+
+
   useEffect(() => {
     cargarLotes();
   }, []);
@@ -398,39 +695,33 @@ const descargarPDF = async (lote: Lote) => {
     }
   }
 
-  async function eliminarLote(id: string) {
-    const confirmar = window.confirm(
-      '¿Está seguro de eliminar este lote? Las guías asociadas quedarán sin lote asignado.'
-    );
+  // Ahora que las foreign keys tienen ON DELETE CASCADE / SET NULL,
+  // eliminar el lote se encarga de limpiar movimientos, detalle_lote,
+  // etiquetas, control_calidad y procesamientos automáticamente,
+  // y desvincula las guías (lote_id -> null) sin necesidad de hacerlo a mano aquí.
+  async function confirmarEliminarLote() {
+    if (!loteEliminar) return;
 
-    if (!confirmar) return;
+    try {
+      setEliminando(true);
 
-    // Primero desvincula las guías asociadas
-    const { error: errorGuias } = await supabase
-      .from('guias')
-      .update({ lote_id: null })
-      .eq('lote_id', id);
+      const { error } = await supabase
+        .from('lotes')
+        .delete()
+        .eq('id', loteEliminar.id);
 
-    if (errorGuias) {
-      console.error(errorGuias);
-      alert('Error al desvincular las guías asociadas');
-      return;
+      if (error) {
+        console.error(error);
+        alert('Error eliminando el lote');
+        return;
+      }
+
+      setLoteEliminar(null);
+      cargarLotes();
+    } finally {
+      setEliminando(false);
     }
-
-    // Luego elimina el lote
-    const { error } = await supabase
-      .from('lotes')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      console.error(error);
-      alert('Error eliminando lote');
-      return;
-    }
-
-  cargarLotes();
-}
+  }
 
 
   const getEstadoBadge = (
@@ -462,15 +753,27 @@ const descargarPDF = async (lote: Lote) => {
           <p className="text-gray-600">Control y trazabilidad de lotes de producción</p>
         </div>
 
-        {canRegister && (
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          onClick={() => {
-            setLoteEditar(null);
-            setMostrarModal(true);}}>
-            <Plus className="w-5 h-5" />
-            Nuevo Lote
+        <div className="flex items-center gap-3">
+          <button
+            onClick={generarPDFGeneral}
+            disabled={generandoPDFGeneral || lotes.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+            title="Genera un PDF con todos los lotes agrupados por especie, con su estado de bodega (PAC / NO PAC)"
+          >
+            <FileDown className="w-5 h-5" />
+            {generandoPDFGeneral ? 'Generando...' : 'Generar PDF General'}
           </button>
-        )}
+
+          {canRegister && (
+            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            onClick={() => {
+              setLoteEditar(null);
+              setMostrarModal(true);}}>
+              <Plus className="w-5 h-5" />
+              Nuevo Lote
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="bg-white p-6 rounded-xl border border-gray-200">
@@ -559,7 +862,7 @@ const descargarPDF = async (lote: Lote) => {
                           </button>
 
                           <button
-                            onClick={() => eliminarLote(lote.id)}
+                            onClick={() => setLoteEliminar(lote)}
                             className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             title="Eliminar"
                           >
@@ -714,6 +1017,56 @@ const descargarPDF = async (lote: Lote) => {
             cargarLotes();
           }}
         />
+      )}
+
+      {loteEliminar && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+
+            <div className="px-6 py-5">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-red-100 rounded-full shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    ¿Eliminar este lote?
+                  </h2>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Estás a punto de eliminar el lote{' '}
+                    <span className="font-semibold text-gray-900">
+                      {loteEliminar.codigo_lote}
+                    </span>
+                    . Esta acción es{' '}
+                    <span className="font-semibold">permanente</span> y
+                    también eliminará todo su historial de movimientos,
+                    asignaciones de rack, etiquetas, control de calidad y
+                    procesamientos asociados. Las guías vinculadas quedarán
+                    sin lote asignado.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t">
+              <button
+                onClick={() => setLoteEliminar(null)}
+                disabled={eliminando}
+                className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarEliminarLote}
+                disabled={eliminando}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-red-300"
+              >
+                {eliminando ? 'Eliminando...' : 'Sí, eliminar'}
+              </button>
+            </div>
+
+          </div>
+        </div>
       )}
     </div>
   );

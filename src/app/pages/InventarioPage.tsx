@@ -39,14 +39,15 @@ export function InventarioPage() {
             id,
             codigo,
             ubicacion,
-            capacidad_kg
+            capacidad_kg,
+            bodega
           )
         `)
         .order('fecha_ingreso', { ascending: false }),
 
       supabase
         .from('racks')
-        .select('id, codigo, ubicacion, capacidad_kg')
+        .select('id, codigo, ubicacion, capacidad_kg, bodega')
         .order('codigo'),
     ]);
 
@@ -89,6 +90,18 @@ export function InventarioPage() {
       month: '2-digit',
       year: 'numeric',
     }).format(new Date(dateString));
+  };
+
+  const bodegaLabel = (bodega: string | null | undefined) => {
+    if (bodega === 'PAC') return 'PAC';
+    if (bodega === 'NO_PAC') return 'NO PAC';
+    return 'Sin bodega';
+  };
+
+  const bodegaBadgeClass = (bodega: string | null | undefined) => {
+    if (bodega === 'PAC') return 'bg-blue-100 text-blue-700';
+    if (bodega === 'NO_PAC') return 'bg-purple-100 text-purple-700';
+    return 'bg-gray-100 text-gray-600';
   };
 
   const totalKilos = inventarioFiltrado.reduce(
@@ -213,11 +226,12 @@ export function InventarioPage() {
     autoTable(pdf, {
       startY: y,
       margin: { left: 12, right: 12 },
-      head: [["Lote", "Producto", "Rack", "Tipo Parte", "Cajas", "Kilos", "Fecha Ingreso"]],
+      head: [["Lote", "Producto", "Rack", "Bodega", "Tipo Parte", "Cajas", "Kilos", "Fecha Ingreso"]],
       body: inventarioFiltrado.map((item) => [
         item.lotes?.codigo_lote ?? "-",
         item.lotes?.especies?.nombre ?? "-",
         item.racks?.codigo ?? "-",
+        bodegaLabel(item.racks?.bodega),
         item.lotes?.presentaciones?.nombre ?? "-",
         String(item.cajas ?? 0),
         `${Number(item.kilos ?? 0).toLocaleString()} kg`,
@@ -244,20 +258,27 @@ export function InventarioPage() {
     autoTable(pdf, {
       startY: y,
       margin: { left: 12, right: 12 },
-      head: [["Rack", "Ubicación", "Cajas", "Kilos", "Capacidad (kg)", "Lotes"]],
+      head: [["Rack", "Ubicación", "Bodega", "Cajas", "Kilos", "Capacidad (kg)", "Lotes"]],
       body: racks.map((rack) => {
         const itemsEnRack = inventario.filter((i) => i.rack_id === rack.id);
         const kilosEnRack = itemsEnRack.reduce((sum, i) => sum + (Number(i.kilos) || 0), 0);
         const cajasEnRack = itemsEnRack.reduce((sum, i) => sum + (Number(i.cajas) || 0), 0);
-        const lotesEnRack = new Set(itemsEnRack.map((i) => i.lote_id)).size;
+        const codigosLotesEnRack = Array.from(
+          new Set(
+            itemsEnRack
+              .map((i) => i.lotes?.codigo_lote)
+              .filter(Boolean)
+          )
+        );
 
         return [
           rack.codigo,
           rack.ubicacion ?? "-",
+          bodegaLabel(rack.bodega),
           String(cajasEnRack),
           `${kilosEnRack.toLocaleString()} kg`,
           rack.capacidad_kg ? `${Number(rack.capacidad_kg).toLocaleString()} kg` : "-",
-          String(lotesEnRack),
+          codigosLotesEnRack.length > 0 ? codigosLotesEnRack.join(", ") : "-",
         ];
       }),
       headStyles: { fillColor: MORADO as [number, number, number] },
@@ -349,7 +370,7 @@ export function InventarioPage() {
             <option value="todos">Todos los racks</option>
             {racks.map((rack) => (
               <option key={rack.id} value={rack.id}>
-                {rack.codigo} - {rack.ubicacion}
+                {rack.codigo} - {rack.ubicacion} ({bodegaLabel(rack.bodega)})
               </option>
             ))}
           </select>
@@ -367,6 +388,7 @@ export function InventarioPage() {
                   <th className="text-left py-3 px-4 text-gray-700">Lote</th>
                   <th className="text-left py-3 px-4 text-gray-700">Producto</th>
                   <th className="text-left py-3 px-4 text-gray-700">Rack</th>
+                  <th className="text-left py-3 px-4 text-gray-700">Bodega</th>
                   <th className="text-left py-3 px-4 text-gray-700">Tipo Parte</th>
                   <th className="text-left py-3 px-4 text-gray-700">Cajas</th>
                   <th className="text-left py-3 px-4 text-gray-700">Kilos</th>
@@ -390,6 +412,15 @@ export function InventarioPage() {
                         <Warehouse className="w-4 h-4 text-purple-600" />
                         <span className="text-gray-900">{item.racks?.codigo ?? '-'}</span>
                       </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span
+                        className={`inline-block px-2 py-1 rounded text-xs ${bodegaBadgeClass(
+                          item.racks?.bodega
+                        )}`}
+                      >
+                        {bodegaLabel(item.racks?.bodega)}
+                      </span>
                     </td>
                     <td className="py-3 px-4 text-gray-600">
                       {item.lotes?.presentaciones?.nombre ?? '-'}
@@ -425,15 +456,28 @@ export function InventarioPage() {
             const cajasEnRack = itemsEnRack.reduce(
               (sum, i) => sum + (Number(i.cajas) || 0), 0
             );
-            const lotesEnRack = new Set(
-              itemsEnRack.map((i) => i.lote_id)
-            ).size;
+            const codigosLotesEnRack = Array.from(
+              new Set(
+                itemsEnRack
+                  .map((i) => i.lotes?.codigo_lote)
+                  .filter(Boolean)
+              )
+            );
 
             return (
               <div key={rack.id} className="p-4 border border-gray-200 rounded-lg">
-                <div className="flex items-center gap-2 mb-3">
-                  <Warehouse className="w-5 h-5 text-purple-600" />
-                  <h3 className="text-gray-900">{rack.codigo}</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Warehouse className="w-5 h-5 text-purple-600" />
+                    <h3 className="text-gray-900">{rack.codigo}</h3>
+                  </div>
+                  <span
+                    className={`inline-block px-2 py-1 rounded text-xs ${bodegaBadgeClass(
+                      rack.bodega
+                    )}`}
+                  >
+                    {bodegaLabel(rack.bodega)}
+                  </span>
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
@@ -446,9 +490,13 @@ export function InventarioPage() {
                       {kilosEnRack.toLocaleString()} / {rack.capacidad_kg ? Number(rack.capacidad_kg).toLocaleString() : '-'} kg
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Lotes:</span>
-                    <span className="text-gray-900">{lotesEnRack}</span>
+                  <div className="flex justify-between items-start gap-2">
+                    <span className="text-gray-600 shrink-0">Lotes:</span>
+                    <span className="text-gray-900 text-right">
+                      {codigosLotesEnRack.length > 0
+                        ? codigosLotesEnRack.join(", ")
+                        : '-'}
+                    </span>
                   </div>
                 </div>
               </div>

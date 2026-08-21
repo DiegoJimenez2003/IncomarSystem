@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 
 interface Rack {
-id?: number;
+id?: string;
 codigo: string;
 ubicacion: string;
 capacidad_kg: number;
 activo: boolean;
+bodega: string | null;
 }
 
 interface RackModalProps {
@@ -24,6 +25,7 @@ rackEditar,
 const [codigo, setCodigo] = useState("");
 const [ubicacion, setUbicacion] = useState("");
 const [capacidadKg, setCapacidadKg] = useState<number | "">("");
+const [bodega, setBodega] = useState<string>("");
 const [activo, setActivo] = useState(true);
 
 const esEdicion = !!rackEditar;
@@ -34,11 +36,13 @@ if (isOpen) {
     setCodigo(rackEditar.codigo);
     setUbicacion(rackEditar.ubicacion);
     setCapacidadKg(rackEditar.capacidad_kg);
+    setBodega(rackEditar.bodega ?? "");
     setActivo(rackEditar.activo);
     } else {
     setCodigo("");
     setUbicacion("");
     setCapacidadKg("");
+    setBodega("");
     setActivo(true);
     }
 }
@@ -48,22 +52,21 @@ if (!isOpen) return null;
 
 return (
 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-
     <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
-
+    {/* HEADER */}
     <div className="px-6 py-4 border-b">
         <h2 className="text-xl font-semibold text-gray-900">
         {esEdicion ? "Editar Rack" : "Nuevo Rack"}
         </h2>
     </div>
 
+    {/* CONTENIDO */}
     <div className="p-6 space-y-4">
-
+        {/* CÓDIGO */}
         <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
             Código
         </label>
-
         <input
             type="text"
             value={codigo}
@@ -72,36 +75,52 @@ return (
         />
         </div>
 
+        {/* UBICACIÓN */}
         <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
             Ubicación
         </label>
-
         <input
             type="text"
             value={ubicacion}
             onChange={(e) => setUbicacion(e.target.value)}
+            placeholder="Ej: Pasillo A - Nivel 2"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
         </div>
 
+        {/* BODEGA */}
+        <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+            Bodega
+        </label>
+        <select
+            value={bodega}
+            onChange={(e) => setBodega(e.target.value)}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        >
+            <option value="">Seleccione una bodega</option>
+            <option value="PAC">Bodega PAC</option>
+            <option value="NO_PAC">Bodega NO PAC</option>
+        </select>
+        </div>
+
+        {/* CAPACIDAD */}
         <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
             Capacidad (kg)
         </label>
-
         <input
             type="number"
             value={capacidadKg}
             onChange={(e) =>
-            setCapacidadKg(
-                e.target.value === "" ? "" : Number(e.target.value)
-            )
+            setCapacidadKg(e.target.value === "" ? "" : Number(e.target.value))
             }
             className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
         </div>
 
+        {/* ACTIVO */}
         {esEdicion && (
         <div className="flex items-center gap-2">
             <input
@@ -116,18 +135,16 @@ return (
             </label>
         </div>
         )}
-
     </div>
 
+    {/* FOOTER */}
     <div className="flex justify-end gap-3 px-6 py-4 border-t">
-
         <button
         onClick={onClose}
         className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100"
         >
         Cancelar
         </button>
-
         <button
         onClick={() =>
             onSave({
@@ -136,17 +153,15 @@ return (
             ubicacion,
             capacidad_kg: Number(capacidadKg),
             activo,
+            bodega: bodega || null,
             })
         }
         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
         {esEdicion ? "Guardar cambios" : "Guardar"}
         </button>
-
     </div>
-
     </div>
-
 </div>
 );
 }
