@@ -9,6 +9,7 @@ import {
   Tag,
   Pencil,
   Trash2,
+  ExternalLink,
 } from "lucide-react";
 
 import { useAuth } from "../context/AuthContext";
@@ -364,18 +365,31 @@ export function CalidadPage() {
           </p>
         </div>
 
-        {canRegister && (
-          <button
-            onClick={() => {
-            setControlSeleccionado(null);
-            setModalAbierto(true);
-          }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        <div className="flex items-center gap-3">
+          <a
+            href="https://www.sernapesca.cl/informacion-utilidad/nominas-0/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            title="Nómina de habilitación sanitaria de embarcaciones artesanales (Sernapesca)"
           >
-            <Plus className="w-5 h-5" />
-            Nuevo Control
-          </button>
-        )}
+            <ExternalLink className="w-5 h-5" />
+            Nómina Sernapesca
+          </a>
+
+          {canRegister && (
+            <button
+              onClick={() => {
+              setControlSeleccionado(null);
+              setModalAbierto(true);
+            }}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              Nuevo Control
+            </button>
+          )}
+        </div>
 
       </div>
 
