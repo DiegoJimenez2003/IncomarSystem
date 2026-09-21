@@ -26,6 +26,7 @@ import { TrazabilidadPage } from './pages/TrazabilidadPage';
 import { ProductosPage } from './pages/ProductosPage';
 import { PlantasPage } from './pages/PlantasPage';
 import { UsuariosPage } from './pages/UsuariosPage';
+import { CamarasPage } from './pages/CamarasPage';
 
 // ======================================================
 // COMPONENTES DE ESTRUCTURA
@@ -130,6 +131,14 @@ export const router = createBrowserRouter([
           {
             path: '/racks',
             element: <RacksPage />,
+          },
+
+          // ======================================================
+          // MÓDULO Camaras
+          // ======================================================
+          {
+            path: '/camaras',
+            element: <CamarasPage />,
           },
 
           // ======================================================

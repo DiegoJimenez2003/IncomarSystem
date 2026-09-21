@@ -8,6 +8,8 @@ import { logoIncomar } from '../../utils/LogoBase64';
 import { AsignarRackModal } from '../components/Productos/AsignarRackModal';
 import { Warehouse } from 'lucide-react'; // agrégalo junto a los otros imports de lucide-react
 import autoTable from 'jspdf-autotable';
+import { MoverACamaraModal } from '../components/Productos/MoverACamaraModal';
+import { Snowflake } from 'lucide-react';
 
   interface Lote {
   id: string;
@@ -61,6 +63,8 @@ const OPCIONES_FECHA: { valor: FiltroFecha; etiqueta: string }[] = [
   { valor: 'mes', etiqueta: 'Este mes' },
 ];
 
+
+
 function fechaEnRango(fechaISO: string, filtro: FiltroFecha): boolean {
   if (filtro === 'todos') return true;
 
@@ -112,7 +116,7 @@ function fechaEnRango(fechaISO: string, filtro: FiltroFecha): boolean {
     useState<Lote | null>(null);
 
     const [loteAsignar, setLoteAsignar] = useState<Lote | null>(null);
-
+    const [loteMoverCamara, setLoteMoverCamara] = useState<Lote | null>(null);
     const [loteEliminar, setLoteEliminar] = useState<Lote | null>(null);
     const [eliminando, setEliminando] = useState(false);
 
@@ -233,12 +237,29 @@ const descargarPDF = async (lote: Lote) => {
   }
 
   const detalle = detalleTodos ?? [];
+    // Stock en cámaras (todos los lotes)
+  const { data: camaraTodos, error: errCamara } = await supabase
+    .from('detalle_camara')
+    .select('lote_id, kilos, fecha_ingreso, camaras ( nombre, tipo )');
+
+  if (errCamara) {
+    console.error(errCamara);
+  }
+
+  const enCamara = camaraTodos ?? [];
+
+  // Cámaras donde está ESTE lote
+  const camarasDelLote = enCamara.filter((c: any) => c.lote_id === lote.id);
 
   // Racks asociados a ESTE lote específico
   const racksDelLote = detalle.filter((d: any) => d.lote_id === lote.id);
 
   // Lotes que actualmente tienen stock en inventario (sistema completo)
-  const lotesIdsEnInventario = new Set(detalle.map((d: any) => d.lote_id));
+    // Un lote está en inventario si tiene kilos en algún rack O en alguna cámara
+  const lotesIdsEnInventario = new Set([
+    ...detalle.map((d: any) => d.lote_id),
+    ...enCamara.map((c: any) => c.lote_id),
+  ]);
   const totalLotesInventario = lotesIdsEnInventario.size;
 
   // Desglose por grupo especie + presentación, usando los lotes ya cargados en memoria
@@ -403,6 +424,48 @@ const descargarPDF = async (lote: Lote) => {
   }
 
   // ======================================================
+  // UBICACIÓN EN CÁMARAS
+  // ======================================================
+
+  checkPageBreak(20);
+  tituloSeccion("UBICACIÓN EN CÁMARAS", AZUL);
+
+  if (camarasDelLote.length > 0) {
+    autoTable(pdf, {
+      startY: y,
+      margin: { left: 12, right: 12 },
+      head: [['Cámara', 'Tipo', 'Kilos', 'Ingreso']],
+      body: camarasDelLote.map((c: any) => [
+        c.camaras?.nombre ?? '-',
+        c.camaras?.tipo === 'NO_PAC' ? 'NO PAC' : (c.camaras?.tipo ?? '-'),
+        `${(Number(c.kilos) || 0).toLocaleString()} kg`,
+        c.fecha_ingreso ? formatDate(c.fecha_ingreso) : '-',
+      ]),
+      headStyles: { fillColor: AZUL as [number, number, number] },
+      styles: { fontSize: 9 },
+      alternateRowStyles: { fillColor: FONDO as [number, number, number] },
+    });
+    y = (pdf as any).lastAutoTable.finalY + 6;
+
+    const totalEnCamara = camarasDelLote.reduce(
+      (sum: number, c: any) => sum + (Number(c.kilos) || 0),
+      0
+    );
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(10);
+    pdf.setTextColor(0, 0, 0);
+    pdf.text(`Total en cámaras: ${totalEnCamara.toLocaleString()} kg`, 18, y);
+    y += 10;
+  } else {
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    pdf.setTextColor(GRIS[0], GRIS[1], GRIS[2]);
+    pdf.text("Este lote no está en ninguna cámara actualmente.", 18, y);
+    y += 12;
+  }
+
+  // ======================================================
   // INVENTARIO GENERAL (nuevo)
   // ======================================================
 
@@ -510,6 +573,36 @@ const generarPDFGeneral = async () => {
 
     const detalle = detalleTodos ?? [];
 
+        // Stock en cámaras de todos los lotes
+    const { data: camaraTodos, error: errCamara } = await supabase
+      .from('detalle_camara')
+      .select('lote_id, kilos, camaras ( nombre, tipo )');
+
+    if (errCamara) {
+      console.error(errCamara);
+    }
+
+    const enCamara = camaraTodos ?? [];
+
+    // Mapa lote_id -> kilos en cámara (total y por tipo)
+    const camaraPorLote = new Map<
+      string,
+      { kilos: number; kilosPAC: number; kilosNoPAC: number }
+    >();
+
+    enCamara.forEach((c: any) => {
+      const actual = camaraPorLote.get(c.lote_id) ?? {
+        kilos: 0,
+        kilosPAC: 0,
+        kilosNoPAC: 0,
+      };
+      const kg = Number(c.kilos) || 0;
+      actual.kilos += kg;
+      if (c.camaras?.tipo === 'PAC') actual.kilosPAC += kg;
+      else if (c.camaras?.tipo === 'NO_PAC') actual.kilosNoPAC += kg;
+      camaraPorLote.set(c.lote_id, actual);
+    });
+
     // Mapa lote_id -> info agregada de sus asignaciones a racks
     const infoPorLote = new Map<
       string,
@@ -570,6 +663,8 @@ const generarPDFGeneral = async () => {
     let kilosPACGeneral = 0;
     let kilosNoPACGeneral = 0;
     let kilosSinAsignarGeneral = 0;
+    let kilosCamaraPACGeneral = 0;
+    let kilosCamaraNoPACGeneral = 0;
 
     lotes.forEach((l) => {
       const kilos = Number(l.kilos_netos) || 0;
@@ -577,9 +672,13 @@ const generarPDFGeneral = async () => {
       totalCajasGeneral += Number(l.cantidad_cajas) || 0;
 
       const info = infoPorLote.get(l.id);
-      const asignados = info?.kilosAsignados ?? 0;
+      const camara = camaraPorLote.get(l.id);
+      // "Asignado" = en rack + en cámara
+      const asignados = (info?.kilosAsignados ?? 0) + (camara?.kilos ?? 0);
       const sinAsignar = Math.max(kilos - asignados, 0);
       kilosSinAsignarGeneral += sinAsignar;
+      kilosCamaraPACGeneral += camara?.kilosPAC ?? 0;
+      kilosCamaraNoPACGeneral += camara?.kilosNoPAC ?? 0;
 
       detalle
         .filter((d: any) => d.lote_id === l.id)
@@ -640,7 +739,7 @@ const generarPDFGeneral = async () => {
 
     tituloSeccion("RESUMEN GENERAL");
 
-    autoTable(pdf, {
+        autoTable(pdf, {
       startY: y,
       margin: { left: MARGIN, right: MARGIN },
       head: [[
@@ -649,7 +748,9 @@ const generarPDFGeneral = async () => {
         'Total Cajas',
         'Kilos en Bodega PAC',
         'Kilos en Bodega NO PAC',
-        'Kilos sin asignar a rack',
+        'Kilos en Cámara PAC',
+        'Kilos en Cámara NO PAC',
+        'Kilos sin ubicación',
       ]],
       body: [[
         String(lotes.length),
@@ -657,6 +758,8 @@ const generarPDFGeneral = async () => {
         String(totalCajasGeneral),
         `${kilosPACGeneral.toLocaleString()} kg`,
         `${kilosNoPACGeneral.toLocaleString()} kg`,
+        `${kilosCamaraPACGeneral.toLocaleString()} kg`,
+        `${kilosCamaraNoPACGeneral.toLocaleString()} kg`,
         `${kilosSinAsignarGeneral.toLocaleString()} kg`,
       ]],
       headStyles: { fillColor: AZUL as [number, number, number] },
@@ -702,16 +805,25 @@ const generarPDFGeneral = async () => {
       autoTable(pdf, {
         startY: y,
         margin: { left: MARGIN, right: MARGIN },
-        head: [[
+                head: [[
           'Lote', 'Presentación', 'Planta', 'Fecha Producción',
-          'Estado', 'Kilos', 'Cajas', 'Racks asignados', 'Bodega',
+          'Estado', 'Kilos', 'Cajas', 'Racks asignados', 'Bodega', 'En cámara',
         ]],
         body: lotesEspecie
           .slice()
           .sort((a, b) => a.codigo_lote.localeCompare(b.codigo_lote))
           .map((l) => {
             const info = infoPorLote.get(l.id);
+            const camara = camaraPorLote.get(l.id);
             const estadoBodega = estadoBodegaLote(l.id);
+
+            const partesCamara: string[] = [];
+            if (camara?.kilosPAC) {
+              partesCamara.push(`PAC ${camara.kilosPAC.toLocaleString()} kg`);
+            }
+            if (camara?.kilosNoPAC) {
+              partesCamara.push(`NO PAC ${camara.kilosNoPAC.toLocaleString()} kg`);
+            }
 
             return [
               l.codigo_lote,
@@ -723,8 +835,11 @@ const generarPDFGeneral = async () => {
               String(l.cantidad_cajas ?? '-'),
               info && info.racks.length > 0
                 ? Array.from(new Set(info.racks)).join(', ')
-                : 'Sin asignar',
-              bodegaLabelLote(estadoBodega),
+                : (camara ? '-' : 'Sin asignar'),
+              estadoBodega === 'SIN_ASIGNAR' && camara
+                ? 'Solo en cámara'
+                : bodegaLabelLote(estadoBodega),
+              partesCamara.length > 0 ? partesCamara.join(' / ') : '-',
             ];
           }),
         headStyles: { fillColor: VERDE as [number, number, number] },
@@ -1064,6 +1179,13 @@ const generarPDFGeneral = async () => {
                         <Eye className="w-4 h-4" />
                       </button>
                       <button
+                        onClick={() => setLoteMoverCamara(lote)}
+                        className="p-2 text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors"
+                        title="Trasladar a cámara"
+                      >
+                        <Snowflake className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={() => setLoteAsignar(lote)}
                         className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
                         title="Asignar a rack"
@@ -1230,6 +1352,15 @@ const generarPDFGeneral = async () => {
           </div>
 
         </div>
+      )}
+      {loteMoverCamara && (
+        <MoverACamaraModal
+          lote={loteMoverCamara}
+          onClose={() => setLoteMoverCamara(null)}
+          onSuccess={() => {
+            cargarLotes();
+          }}
+        />
       )}
       {loteAsignar && (
         <AsignarRackModal

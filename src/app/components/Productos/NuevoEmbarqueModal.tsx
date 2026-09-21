@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { X, Plus, Trash2, Ship } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { X, Plus, Trash2, Ship, Search } from "lucide-react";
 import { supabase } from '../../../utils/supabase';
 import { useAuth } from "../../context/AuthContext";
 
@@ -8,6 +8,12 @@ id: string;
 codigo_lote: string;
 kilos_disponibles: number;
 cajas_disponibles: number;
+}
+
+// Lote con lo que aún queda por embarcar (descontando lo ya agregado a la lista)
+interface LoteConRestante extends LoteDisponible {
+kilos_restantes: number;
+cajas_restantes: number;
 }
 
 interface ItemEmbarque {
@@ -23,6 +29,8 @@ interface Props {
 onClose: () => void;
 onSuccess: () => void;
 }
+
+const redondear = (n: number) => Math.round(n * 100) / 100;
 
 export function NuevoEmbarqueModal({ onClose, onSuccess }: Props) {
 const { user } = useAuth();
@@ -40,6 +48,12 @@ const [loteSeleccionado, setLoteSeleccionado] = useState("");
 const [kilosInput, setKilosInput] = useState("");
 const [cajasInput, setCajasInput] = useState("");
 
+// Buscador del selector de lotes
+const [busquedaLote, setBusquedaLote] = useState("");
+const [listaAbierta, setListaAbierta] = useState(false);
+const [indiceResaltado, setIndiceResaltado] = useState(0);
+const comboRef = useRef<HTMLDivElement>(null);
+
 const [items, setItems] = useState<ItemEmbarque[]>([]);
 const [guardando, setGuardando] = useState(false);
 const [cargandoLotes, setCargandoLotes] = useState(true);
@@ -47,6 +61,25 @@ const [cargandoLotes, setCargandoLotes] = useState(true);
 useEffect(() => {
 cargarLotesDisponibles();
 }, []);
+
+// Cierra la lista al hacer clic fuera del buscador
+useEffect(() => {
+function cerrarSiClickFuera(e: MouseEvent) {
+    if (comboRef.current && !comboRef.current.contains(e.target as Node)) {
+    setListaAbierta(false);
+    }
+}
+document.addEventListener("mousedown", cerrarSiClickFuera);
+return () => document.removeEventListener("mousedown", cerrarSiClickFuera);
+}, []);
+
+// Mantiene visible la opción resaltada al navegar con el teclado
+useEffect(() => {
+if (!listaAbierta) return;
+document
+    .getElementById(`opcion-lote-${indiceResaltado}`)
+    ?.scrollIntoView({ block: "nearest" });
+}, [indiceResaltado, listaAbierta]);
 
 // =====================================================
 // LOTES CON KILOS ASIGNADOS A RACKS (inventario embarcable)
@@ -99,7 +132,8 @@ try {
         cajas_disponibles: disp.cajas,
         };
     })
-    .filter((l) => l.kilos_disponibles > 0);
+    .filter((l) => l.kilos_disponibles > 0)
+    .sort((a, b) => a.codigo_lote.localeCompare(b.codigo_lote));
 
     setLotesDisponibles(resultado);
 } catch (error) {
@@ -108,6 +142,95 @@ try {
 } finally {
     setCargandoLotes(false);
 }
+}
+
+// =====================================================
+// BUSCADOR DE LOTES
+// =====================================================
+
+// Lotes con lo que todavía se puede embarcar (descontando lo ya agregado)
+const lotesConRestante = useMemo<LoteConRestante[]>(() => {
+return lotesDisponibles
+    .map((l) => {
+    const usados = items.filter((i) => i.lote_id === l.id);
+    return {
+        ...l,
+        kilos_restantes: redondear(
+        l.kilos_disponibles - usados.reduce((s, i) => s + i.kilos, 0)
+        ),
+        cajas_restantes:
+        l.cajas_disponibles - usados.reduce((s, i) => s + i.cajas, 0),
+    };
+    })
+    .filter((l) => l.kilos_restantes > 0);
+}, [lotesDisponibles, items]);
+
+// Lista filtrada por lo que se escribe en el buscador
+const opciones = useMemo(() => {
+const q = busquedaLote.trim().toLowerCase();
+if (!q) return lotesConRestante;
+return lotesConRestante.filter((l) =>
+    l.codigo_lote.toLowerCase().includes(q)
+);
+}, [lotesConRestante, busquedaLote]);
+
+const loteSel = lotesConRestante.find((l) => l.id === loteSeleccionado) ?? null;
+
+function abrirLista() {
+if (listaAbierta) return;
+setListaAbierta(true);
+setBusquedaLote("");
+setIndiceResaltado(0);
+}
+
+function seleccionarLote(l: LoteConRestante) {
+setLoteSeleccionado(l.id);
+setBusquedaLote("");
+setListaAbierta(false);
+
+// Se completa con lo que queda del lote; el usuario puede editarlo
+setKilosInput(String(l.kilos_restantes));
+setCajasInput(l.cajas_restantes > 0 ? String(l.cajas_restantes) : "");
+}
+
+function manejarTecla(e: KeyboardEvent<HTMLInputElement>) {
+if (e.key === "ArrowDown") {
+    e.preventDefault();
+    setListaAbierta(true);
+    setIndiceResaltado((i) => Math.min(i + 1, opciones.length - 1));
+} else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    setIndiceResaltado((i) => Math.max(i - 1, 0));
+} else if (e.key === "Enter") {
+    e.preventDefault();
+    if (listaAbierta && opciones[indiceResaltado]) {
+    seleccionarLote(opciones[indiceResaltado]);
+    }
+} else if (e.key === "Escape") {
+    setListaAbierta(false);
+}
+}
+
+// Al cambiar los kilos, las cajas se recalculan proporcionalmente
+// al stock del lote (siguen siendo editables a mano).
+function cambiarKilos(valor: string) {
+setKilosInput(valor);
+
+if (!loteSel) return;
+
+const kilos = Number(valor);
+
+if (valor === "" || !Number.isFinite(kilos) || kilos <= 0) {
+    setCajasInput("");
+    return;
+}
+
+if (loteSel.cajas_restantes <= 0) return;
+
+const cajas = Math.round(
+    (kilos * loteSel.cajas_restantes) / loteSel.kilos_restantes
+);
+setCajasInput(String(Math.min(cajas, loteSel.cajas_restantes)));
 }
 
 // =====================================================
@@ -164,6 +287,8 @@ setItems((prev) => [
 ]);
 
 setLoteSeleccionado("");
+setBusquedaLote("");
+setListaAbierta(false);
 setKilosInput("");
 setCajasInput("");
 }
@@ -436,26 +561,70 @@ return (
         </h3>
 
         <div className="grid grid-cols-4 gap-3">
-            <select
-            value={loteSeleccionado}
-            onChange={(e) => setLoteSeleccionado(e.target.value)}
-            className="col-span-2 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-            <option value="">
-                {cargandoLotes ? "Cargando lotes..." : "Seleccione un lote"}
-            </option>
-            {lotesDisponibles.map((l) => (
-                <option key={l.id} value={l.id}>
-                {l.codigo_lote} ({l.kilos_disponibles.toLocaleString()} kg disp.)
-                </option>
-            ))}
-            </select>
+            {/* Selector de lote con buscador */}
+            <div className="col-span-2 relative" ref={comboRef}>
+            <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <input
+                type="text"
+                autoComplete="off"
+                value={listaAbierta ? busquedaLote : loteSel?.codigo_lote ?? ""}
+                onFocus={abrirLista}
+                onClick={abrirLista}
+                onChange={(e) => {
+                    setBusquedaLote(e.target.value);
+                    setIndiceResaltado(0);
+                    setListaAbierta(true);
+                }}
+                onKeyDown={manejarTecla}
+                placeholder={
+                    cargandoLotes ? "Cargando lotes..." : "Buscar lote..."
+                }
+                className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+            </div>
+
+            {listaAbierta && (
+                <ul className="absolute z-20 mt-1 w-full max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
+                {opciones.length === 0 ? (
+                    <li className="px-3 py-3 text-sm text-gray-500">
+                    {cargandoLotes
+                        ? "Cargando lotes..."
+                        : "Ningún lote coincide con la búsqueda"}
+                    </li>
+                ) : (
+                    opciones.map((l, idx) => (
+                    <li
+                        key={l.id}
+                        id={`opcion-lote-${idx}`}
+                        onMouseDown={(e) => {
+                        e.preventDefault();
+                        seleccionarLote(l);
+                        }}
+                        onMouseEnter={() => setIndiceResaltado(idx)}
+                        className={`px-3 py-2 cursor-pointer flex items-center justify-between gap-3 ${
+                        idx === indiceResaltado ? "bg-blue-50" : ""
+                        }`}
+                    >
+                        <span className="text-sm font-medium text-gray-900">
+                        {l.codigo_lote}
+                        </span>
+                        <span className="text-xs text-gray-500 whitespace-nowrap">
+                        {l.kilos_restantes.toLocaleString()} kg ·{" "}
+                        {l.cajas_restantes.toLocaleString()} cajas
+                        </span>
+                    </li>
+                    ))
+                )}
+                </ul>
+            )}
+            </div>
 
             <input
             type="number"
             placeholder="Kilos"
             value={kilosInput}
-            onChange={(e) => setKilosInput(e.target.value)}
+            onChange={(e) => cambiarKilos(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
 
@@ -467,6 +636,15 @@ return (
             className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
         </div>
+
+        {loteSel && (
+            <p className="text-xs text-gray-500">
+            Disponible en {loteSel.codigo_lote}:{" "}
+            {loteSel.kilos_restantes.toLocaleString()} kg ·{" "}
+            {loteSel.cajas_restantes.toLocaleString()} cajas. Las cajas se
+            calculan según los kilos, pero puedes editarlas.
+            </p>
+        )}
 
         <button
             onClick={agregarItem}

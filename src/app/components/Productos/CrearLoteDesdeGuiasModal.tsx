@@ -19,6 +19,7 @@ guias: Guia[];
 onClose: () => void;
 onSuccess: () => void;
 }
+const KILOS_POR_CAJA = 20;
 
 export function CrearLoteDesdeGuiasModal({ guias, onClose, onSuccess }: Props) {
 const [presentaciones, setPresentaciones] = useState<Opcion[]>([]);
@@ -39,6 +40,9 @@ const [observaciones, setObservaciones] = useState('');
 const [guardando, setGuardando] = useState(false);
 
 const kilosTotal = guias.reduce((sum, g) => sum + (Number(g.kilos) || 0), 0);
+const cajasCompletas = Math.floor(kilosTotal / KILOS_POR_CAJA);
+const kilosSobrantes =
+  Math.round((kilosTotal - cajasCompletas * KILOS_POR_CAJA) * 100) / 100;
 const especieId = guias[0]?.especie_id;
 const mismaEspecie = guias.every((g) => g.especie_id === especieId);
 
@@ -248,16 +252,21 @@ return (
         </div>
 
         <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-            Cantidad de Cajas
-        </label>
-        <input
-            type="number"
-            value={cantidadCajas}
-            onChange={(e) => setCantidadCajas(e.target.value)}
-            className="w-full border rounded-lg p-2"
-        />
-        </div>
+            <label className="block text-sm font-medium text-gray-700">
+                Cantidad de Cajas
+            </label>
+            <p className="text-xs text-gray-500 mb-1">
+                Referencia: {kilosTotal.toLocaleString()} kg ÷ {KILOS_POR_CAJA} kg ={' '}
+                {cajasCompletas.toLocaleString()} cajas
+                {kilosSobrantes > 0 && ` + ${kilosSobrantes.toLocaleString()} kg sobrantes`}
+            </p>
+            <input
+                type="number"
+                value={cantidadCajas}
+                onChange={(e) => setCantidadCajas(e.target.value)}
+                className="w-full border rounded-lg p-2"
+            />
+            </div>
 
         <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
