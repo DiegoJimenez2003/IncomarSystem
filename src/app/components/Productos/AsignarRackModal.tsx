@@ -3,13 +3,13 @@ import { Warehouse } from 'lucide-react';
 import { supabase } from '../../../utils/supabase';
 
 interface Rack {
-    id: string;
-    codigo: string;
-    ubicacion: string;
-    capacidad_kg: number;
-    activo: boolean;
-    bodega: string | null;
-    }
+id: string;
+codigo: string;
+ubicacion: string;
+capacidad_kg: number;
+activo: boolean;
+bodega: string | null;
+}
 
 interface Lote {
 id: string;
@@ -23,6 +23,10 @@ lote: Lote;
 onClose: () => void;
 onSuccess: () => void;
 }
+
+const KILOS_POR_CAJA = 20;
+
+const redondear = (n: number) => Math.round(n * 100) / 100;
 
 export function AsignarRackModal({ lote, onClose, onSuccess }: Props) {
 const [racks, setRacks] = useState<Rack[]>([]);
@@ -83,8 +87,56 @@ const cajasYaAsignadas = asignaciones.reduce(
 (sum, a) => sum + (Number(a.cajas) || 0), 0
 );
 
-const kilosDisponibles = (lote.kilos_netos ?? 0) - kilosYaAsignados;
+const kilosDisponibles = redondear((lote.kilos_netos ?? 0) - kilosYaAsignados);
 const cajasDisponibles = (lote.cantidad_cajas ?? 0) - cajasYaAsignadas;
+
+// ======================================================
+// REFERENCIA Y CONVERSIÓN KILOS <-> CAJAS (20 kg por caja)
+// ======================================================
+
+const tieneCajasRegistradas = (lote.cantidad_cajas ?? 0) > 0;
+
+const cajasReferencia = Math.floor(Math.max(kilosDisponibles, 0) / KILOS_POR_CAJA);
+const kilosSobrantes = redondear(
+Math.max(kilosDisponibles, 0) - cajasReferencia * KILOS_POR_CAJA
+);
+
+// Al escribir kilos, se completan las cajas (cajas completas de 20 kg).
+function cambiarKilos(valor: string) {
+setKilos(valor);
+
+const n = Number(valor);
+if (valor === '' || !Number.isFinite(n) || n <= 0) return;
+
+// Si el lote no tiene cajas registradas, no se autocompleta
+if (!tieneCajasRegistradas) return;
+
+// Si se asigna todo lo que queda, las cajas son exactamente las que quedan
+if (redondear(n) === kilosDisponibles) {
+    setCajas(cajasDisponibles > 0 ? String(cajasDisponibles) : '');
+    return;
+}
+
+const tope = Math.max(cajasDisponibles, 0);
+const cajasAuto = Math.min(Math.floor(n / KILOS_POR_CAJA), tope);
+setCajas(cajasAuto > 0 ? String(cajasAuto) : '');
+}
+
+// Al escribir cajas, se completan los kilos (cajas x 20 kg).
+function cambiarCajas(valor: string) {
+setCajas(valor);
+
+const n = Number(valor);
+if (valor === '' || !Number.isFinite(n) || n <= 0) return;
+
+// Si son todas las cajas que quedan, los kilos son exactamente los que quedan
+if (n === cajasDisponibles && kilosDisponibles > 0) {
+    setKilos(String(kilosDisponibles));
+    return;
+}
+
+setKilos(String(redondear(n * KILOS_POR_CAJA)));
+}
 
 async function asignarRack() {
 if (!rackId) {
@@ -114,59 +166,59 @@ try {
     setGuardando(true);
 
     const { error } = await supabase
-        .from('detalle_lote')
+    .from('detalle_lote')
+    .insert({
+        lote_id: lote.id,
+        rack_id: rackId,
+        kilos: kilosNum,
+        cajas: cajasNum || null,
+    });
+
+    if (error) throw error;
+
+    // =====================================================
+    // REGISTRAR MOVIMIENTO DE ENTRADA
+    // =====================================================
+
+    // Buscar el tipo de movimiento "entrada"
+    const { data: tipoEntrada, error: errorTipo } =
+    await supabase
+        .from('tipos_movimiento')
+        .select('id')
+        .eq('nombre', 'entrada')
+        .single();
+
+    if (errorTipo) {
+    console.error(
+        'Error buscando tipo de movimiento:',
+        errorTipo
+    );
+    throw errorTipo;
+    }
+
+    // Registrar movimiento
+    const { error: errorMovimiento } =
+    await supabase
+        .from('movimientos')
         .insert({
-            lote_id: lote.id,
-            rack_id: rackId,
-            kilos: kilosNum,
-            cajas: cajasNum || null,
+        lote_id: lote.id,
+        tipo_movimiento_id: tipoEntrada.id,
+        cantidad_kg: kilosNum,
+        cantidad_cajas: cajasNum || null,
+        descripcion: `Ingreso del lote ${lote.codigo_lote} al inventario`,
         });
 
-        if (error) throw error;
+    if (errorMovimiento) {
+    console.error(
+        'Error registrando movimiento:',
+        errorMovimiento
+    );
+    throw errorMovimiento;
+    }
 
-        // =====================================================
-        // REGISTRAR MOVIMIENTO DE ENTRADA
-        // =====================================================
-
-        // Buscar el tipo de movimiento "entrada"
-        const { data: tipoEntrada, error: errorTipo } =
-        await supabase
-            .from('tipos_movimiento')
-            .select('id')
-            .eq('nombre', 'entrada')
-            .single();
-
-        if (errorTipo) {
-        console.error(
-            'Error buscando tipo de movimiento:',
-            errorTipo
-        );
-        throw errorTipo;
-        }
-
-        // Registrar movimiento
-        const { error: errorMovimiento } =
-        await supabase
-            .from('movimientos')
-            .insert({
-            lote_id: lote.id,
-            tipo_movimiento_id: tipoEntrada.id,
-            cantidad_kg: kilosNum,
-            cantidad_cajas: cajasNum || null,
-            descripcion: `Ingreso del lote ${lote.codigo_lote} al inventario`,
-            });
-
-        if (errorMovimiento) {
-        console.error(
-            'Error registrando movimiento:',
-            errorMovimiento
-        );
-        throw errorMovimiento;
-        }
-
-        setRackId('');
-        setKilos('');
-        setCajas('');
+    setRackId('');
+    setKilos('');
+    setCajas('');
 
     await cargarAsignacionesExistentes();
     onSuccess();
@@ -244,39 +296,50 @@ return (
             <option value="">Seleccione un rack</option>
             {racks.map((r) => (
                 <option key={r.id} value={r.id}>
-                    {r.codigo} - {r.ubicacion} (
-                    {r.bodega === "PAC" ? "PAC" : "NO PAC"}
-                    )
+                {r.codigo} - {r.ubicacion} (
+                {r.bodega === "PAC" ? "PAC" : "NO PAC"}
+                )
                 </option>
-                ))}
+            ))}
             </select>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div>
+            <p className="text-xs text-gray-500 mb-2">
+            Referencia: {kilosDisponibles.toLocaleString()} kg disponibles ÷{' '}
+            {KILOS_POR_CAJA} kg = {cajasReferencia.toLocaleString()} cajas
+            {kilosSobrantes > 0 &&
+                ` + ${kilosSobrantes.toLocaleString()} kg sobrantes`}
+            . Al escribir kilos o cajas, el otro campo se completa solo
+            (1 caja = {KILOS_POR_CAJA} kg).
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
             <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                 Kilos a asignar
-            </label>
-            <input
+                </label>
+                <input
                 type="number"
                 value={kilos}
-                onChange={(e) => setKilos(e.target.value)}
+                onChange={(e) => cambiarKilos(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="0"
-            />
+                />
             </div>
 
             <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                 Cajas a asignar
-            </label>
-            <input
+                </label>
+                <input
                 type="number"
                 value={cajas}
-                onChange={(e) => setCajas(e.target.value)}
+                onChange={(e) => cambiarCajas(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="0"
-            />
+                />
+            </div>
             </div>
         </div>
 
@@ -314,14 +377,14 @@ return (
                     <div>
                     <p className="text-sm text-gray-900">
                         {a.racks?.codigo} - {a.racks?.ubicacion}
-                        </p>
+                    </p>
 
-                        <p className="text-xs text-gray-500">
+                    <p className="text-xs text-gray-500">
                         Bodega:{" "}
                         {a.racks?.bodega === "PAC"
-                            ? "PAC"
-                            : "NO PAC"}
-                        </p>
+                        ? "PAC"
+                        : "NO PAC"}
+                    </p>
                     <p className="text-xs text-gray-500">
                         {Number(a.kilos).toLocaleString()} kg
                         {a.cajas ? ` · ${a.cajas} cajas` : ''}
