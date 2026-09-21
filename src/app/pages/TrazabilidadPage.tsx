@@ -14,13 +14,14 @@ import {
   ArrowUpCircle,
   Boxes,
   Truck,
+  FileDown,
+  Snowflake,
 } from 'lucide-react';
 import { supabase } from '../../utils/supabase';
 import type { JSX } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logoIncomar from '../../assets/logo_sin_nombre.png';
-import { FileDown } from 'lucide-react'; // sumar a los imports de lucide-react ya existentes
 
 // ==========================================================================
 // Tipos
@@ -84,6 +85,14 @@ interface InventarioRow {
   fecha_ingreso: string;
 }
 
+// Kilos del lote que están actualmente en una cámara (detalle_camara)
+interface CamaraRow {
+  id: string;
+  camara_id: string | null;
+  kilos: number;
+  fecha_ingreso: string;
+}
+
 interface MovimientoRow {
   id: string;
   tipo_movimiento_id: string | null;
@@ -112,7 +121,7 @@ interface EmbarqueRow {
 interface TimelineEvent {
   id: string;
   fecha: string | null;
-  kind: 'entrada' | 'salida' | 'movimiento' | 'asignacion' | 'calidad' | 'embarque';
+  kind: 'entrada' | 'salida' | 'movimiento' | 'asignacion' | 'camara' | 'calidad' | 'embarque';
   titulo: string;
   lineas: string[];
 }
@@ -134,6 +143,19 @@ const badgeColorClasses: Record<string, string> = {
 
 function badgeClass(color?: string | null) {
   return badgeColorClasses[color || 'gray'] || badgeColorClasses.gray;
+}
+
+// PAC / NO PAC (la "bodega" de un rack y el tipo de una cámara son lo mismo: la cámara)
+function tipoLabel(tipo: string | null | undefined) {
+  if (tipo === 'PAC') return 'PAC';
+  if (tipo === 'NO_PAC') return 'NO PAC';
+  return null;
+}
+
+function tipoBadgeClass(tipo: string | null | undefined) {
+  if (tipo === 'PAC') return 'bg-blue-100 text-blue-700';
+  if (tipo === 'NO_PAC') return 'bg-cyan-100 text-cyan-700';
+  return 'bg-gray-100 text-gray-600';
 }
 
 function formatDate(dateString: string | null) {
@@ -177,6 +199,7 @@ const timelineStyles: Record<TimelineEvent['kind'], { dot: string; icon: JSX.Ele
   salida: { dot: 'bg-red-500', icon: <ArrowUpCircle className="w-4 h-4 text-white" /> },
   movimiento: { dot: 'bg-blue-500', icon: <Package className="w-4 h-4 text-white" /> },
   asignacion: { dot: 'bg-yellow-500', icon: <Boxes className="w-4 h-4 text-white" /> },
+  camara: { dot: 'bg-cyan-500', icon: <Snowflake className="w-4 h-4 text-white" /> },
   calidad: { dot: 'bg-purple-500', icon: <ClipboardCheck className="w-4 h-4 text-white" /> },
   embarque: { dot: 'bg-indigo-500', icon: <Truck className="w-4 h-4 text-white" /> },
 };
@@ -201,7 +224,8 @@ export function TrazabilidadPage() {
   const [estadosProductoMap, setEstadosProductoMap] = useState<Map<string, { nombre: string; color: string }>>(new Map());
   const [estadosEmbarqueMap, setEstadosEmbarqueMap] = useState<Map<string, { nombre: string; color: string }>>(new Map());
   const [tiposMovimientoMap, setTiposMovimientoMap] = useState<Map<string, string>>(new Map());
-  const [racksMap, setRacksMap] = useState<Map<string, { codigo: string; ubicacion: string | null }>>(new Map());
+  const [racksMap, setRacksMap] = useState<Map<string, { codigo: string; ubicacion: string | null; bodega: string | null }>>(new Map());
+  const [camarasMap, setCamarasMap] = useState<Map<string, { nombre: string; tipo: string | null }>>(new Map());
   const [usuariosMap, setUsuariosMap] = useState<Map<string, string>>(new Map());
   const [refLoaded, setRefLoaded] = useState(false);
   const [erroresRef, setErroresRef] = useState<string[]>([]);
@@ -212,6 +236,7 @@ export function TrazabilidadPage() {
   const [procesosLote, setProcesosLote] = useState<ProcesoRow[]>([]);
   const [calidadLote, setCalidadLote] = useState<CalidadRow[]>([]);
   const [inventarioLote, setInventarioLote] = useState<InventarioRow[]>([]);
+  const [camarasLote, setCamarasLote] = useState<CamaraRow[]>([]);
   const [movimientosLote, setMovimientosLote] = useState<MovimientoRow[]>([]);
   const [embarquesLote, setEmbarquesLote] = useState<EmbarqueRow[]>([]);
 
@@ -232,6 +257,7 @@ export function TrazabilidadPage() {
           estadosEmbarqueRes,
           tiposMovimientoRes,
           racksRes,
+          camarasRes,
           usuariosRes,
         ] = await Promise.all([
           supabase.from('especies').select('id, nombre'),
@@ -239,7 +265,8 @@ export function TrazabilidadPage() {
           supabase.from('estados_producto').select('id, nombre, color'),
           supabase.from('estados_embarque').select('id, nombre, color'),
           supabase.from('tipos_movimiento').select('id, nombre'),
-          supabase.from('racks').select('id, codigo, ubicacion'),
+          supabase.from('racks').select('id, codigo, ubicacion, bodega'),
+          supabase.from('camaras').select('id, nombre, tipo'),
           supabase.from('usuarios').select('id, nombre'),
         ]);
 
@@ -249,6 +276,7 @@ export function TrazabilidadPage() {
         if (estadosEmbarqueRes.error) errores.push(`estados_embarque: ${estadosEmbarqueRes.error.message}`);
         if (tiposMovimientoRes.error) errores.push(`tipos_movimiento: ${tiposMovimientoRes.error.message}`);
         if (racksRes.error) errores.push(`racks: ${racksRes.error.message}`);
+        if (camarasRes.error) errores.push(`camaras: ${camarasRes.error.message}`);
         if (usuariosRes.error) errores.push(`usuarios: ${usuariosRes.error.message}`);
 
         setEspeciesMap(new Map((especiesRes.data || []).map((e: any) => [e.id, e.nombre])));
@@ -261,7 +289,15 @@ export function TrazabilidadPage() {
         );
         setTiposMovimientoMap(new Map((tiposMovimientoRes.data || []).map((t: any) => [t.id, t.nombre])));
         setRacksMap(
-          new Map((racksRes.data || []).map((r: any) => [r.id, { codigo: r.codigo, ubicacion: r.ubicacion }]))
+          new Map(
+            (racksRes.data || []).map((r: any) => [
+              r.id,
+              { codigo: r.codigo, ubicacion: r.ubicacion, bodega: r.bodega ?? null },
+            ])
+          )
+        );
+        setCamarasMap(
+          new Map((camarasRes.data || []).map((c: any) => [c.id, { nombre: c.nombre, tipo: c.tipo ?? null }]))
         );
         setUsuariosMap(new Map((usuariosRes.data || []).map((u: any) => [u.id, u.nombre])));
       } catch (err: any) {
@@ -324,22 +360,32 @@ export function TrazabilidadPage() {
     const errores: string[] = [];
 
     try {
-      const [loteRes, guiasRes, procesosRes, calidadRes, detalleLoteRes, movimientosRes, embarqueDetalleRes] =
-        await Promise.all([
-          supabase.from('lotes').select('*').eq('id', loteId).single(),
-          supabase.from('guias').select('*').eq('lote_id', loteId).order('fecha_guia', { ascending: true }),
-          supabase.from('procesamientos').select('*').eq('lote_id', loteId).order('fecha_proceso', { ascending: true }),
-          supabase.from('control_calidad').select('*').eq('lote_id', loteId).order('fecha', { ascending: true }),
-          supabase.from('detalle_lote').select('*').eq('lote_id', loteId).order('fecha_ingreso', { ascending: true }),
-          supabase.from('movimientos').select('*').eq('lote_id', loteId).order('fecha', { ascending: true }),
-          supabase.from('embarque_detalle').select('*').eq('lote_id', loteId),
-        ]);
+      const [
+        loteRes,
+        guiasRes,
+        procesosRes,
+        calidadRes,
+        detalleLoteRes,
+        detalleCamaraRes,
+        movimientosRes,
+        embarqueDetalleRes,
+      ] = await Promise.all([
+        supabase.from('lotes').select('*').eq('id', loteId).single(),
+        supabase.from('guias').select('*').eq('lote_id', loteId).order('fecha_guia', { ascending: true }),
+        supabase.from('procesamientos').select('*').eq('lote_id', loteId).order('fecha_proceso', { ascending: true }),
+        supabase.from('control_calidad').select('*').eq('lote_id', loteId).order('fecha', { ascending: true }),
+        supabase.from('detalle_lote').select('*').eq('lote_id', loteId).order('fecha_ingreso', { ascending: true }),
+        supabase.from('detalle_camara').select('*').eq('lote_id', loteId).order('fecha_ingreso', { ascending: true }),
+        supabase.from('movimientos').select('*').eq('lote_id', loteId).order('fecha', { ascending: true }),
+        supabase.from('embarque_detalle').select('*').eq('lote_id', loteId),
+      ]);
 
       if (loteRes.error) errores.push(`lotes: ${loteRes.error.message}`);
       if (guiasRes.error) errores.push(`guias: ${guiasRes.error.message}`);
       if (procesosRes.error) errores.push(`procesamientos: ${procesosRes.error.message}`);
       if (calidadRes.error) errores.push(`control_calidad: ${calidadRes.error.message}`);
       if (detalleLoteRes.error) errores.push(`detalle_lote: ${detalleLoteRes.error.message}`);
+      if (detalleCamaraRes.error) errores.push(`detalle_camara: ${detalleCamaraRes.error.message}`);
       if (movimientosRes.error) errores.push(`movimientos: ${movimientosRes.error.message}`);
       if (embarqueDetalleRes.error) errores.push(`embarque_detalle: ${embarqueDetalleRes.error.message}`);
 
@@ -349,6 +395,8 @@ export function TrazabilidadPage() {
       setCalidadLote(calidadRes.data || []);
       // Solo asignaciones con cantidades disponibles (una fila agotada se elimina en el sistema)
       setInventarioLote((detalleLoteRes.data || []).filter((d: any) => (d.kilos ?? 0) > 0));
+      // Kilos que están hoy en cámara
+      setCamarasLote((detalleCamaraRes.data || []).filter((d: any) => (d.kilos ?? 0) > 0));
       setMovimientosLote(movimientosRes.data || []);
 
       // Embarques a partir de embarque_detalle (una fila = lo que ESTE lote aportó a ese embarque)
@@ -401,6 +449,7 @@ export function TrazabilidadPage() {
       setProcesosLote([]);
       setCalidadLote([]);
       setInventarioLote([]);
+      setCamarasLote([]);
       setMovimientosLote([]);
       setEmbarquesLote([]);
       return;
@@ -425,6 +474,11 @@ export function TrazabilidadPage() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'detalle_lote', filter: `lote_id=eq.${loteSeleccionado}` },
+        () => cargarDetalle(loteSeleccionado)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'detalle_camara', filter: `lote_id=eq.${loteSeleccionado}` },
         () => cargarDetalle(loteSeleccionado)
       )
       .on(
@@ -459,10 +513,16 @@ export function TrazabilidadPage() {
 
   const kilosOriginales = lote?.kilos_netos ?? 0;
   const cajasOriginales = lote?.cantidad_cajas ?? null;
-  const kilosAlmacenados = inventarioLote.reduce((sum, i) => sum + (i.kilos || 0), 0);
+
+  // Stock actual = lo que está en racks + lo que está en cámaras
+  const kilosEnRacks = inventarioLote.reduce((sum, i) => sum + (i.kilos || 0), 0);
+  const kilosEnCamaras = camarasLote.reduce((sum, c) => sum + (c.kilos || 0), 0);
+  const kilosAlmacenados = kilosEnRacks + kilosEnCamaras;
+  // Las cámaras no registran cajas: este total solo cuenta lo que está en racks
   const cajasAlmacenadas = inventarioLote.some((i) => i.cajas !== null)
     ? inventarioLote.reduce((sum, i) => sum + (i.cajas || 0), 0)
     : null;
+  const totalUbicaciones = inventarioLote.length + camarasLote.length;
   const kilosEnviados = embarquesLote.reduce((sum, e) => sum + (e.kilos || 0), 0);
   const cajasEnviadas = embarquesLote.some((e) => e.cajas !== null)
     ? embarquesLote.reduce((sum, e) => sum + (e.cajas || 0), 0)
@@ -498,6 +558,7 @@ export function TrazabilidadPage() {
 
   inventarioLote.forEach((d) => {
     const rackInfo = d.rack_id ? racksMap.get(d.rack_id) : null;
+    const tipo = tipoLabel(rackInfo?.bodega);
     timeline.push({
       id: `det-${d.id}`,
       fecha: d.fecha_ingreso,
@@ -505,7 +566,23 @@ export function TrazabilidadPage() {
       titulo: 'Asignación a Rack',
       lineas: [
         rackInfo ? `Rack: ${rackInfo.codigo}${rackInfo.ubicacion ? ` (${rackInfo.ubicacion})` : ''}` : 'Rack sin registrar',
+        tipo ? `Cámara ${tipo}` : null,
         formatCantidad(d.kilos, d.cajas),
+      ].filter(Boolean) as string[],
+    });
+  });
+
+  camarasLote.forEach((c) => {
+    const camaraInfo = c.camara_id ? camarasMap.get(c.camara_id) : null;
+    const tipo = tipoLabel(camaraInfo?.tipo);
+    timeline.push({
+      id: `cam-${c.id}`,
+      fecha: c.fecha_ingreso,
+      kind: 'camara',
+      titulo: 'Ingreso a Cámara',
+      lineas: [
+        camaraInfo ? `Cámara: ${camaraInfo.nombre}${tipo ? ` (${tipo})` : ''}` : 'Cámara sin registrar',
+        formatCantidad(c.kilos, null),
       ],
     });
   });
@@ -549,15 +626,15 @@ export function TrazabilidadPage() {
     return new Date(a.fecha).getTime() - new Date(b.fecha).getTime();
   });
 
-    const exportarPDF = () => {
+  const exportarPDF = () => {
     if (!lote) return;
-  
+
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
       format: 'a4',
     });
-  
+
     // ======================================================
     // COLORES CORPORATIVOS (mismos que InventarioPage)
     // ======================================================
@@ -567,70 +644,70 @@ export function TrazabilidadPage() {
     const NARANJA = [234, 88, 12];
     const BORDE = [220, 220, 220];
     const FONDO = [245, 247, 250];
-  
+
     let y = 45;
-  
+
     const checkPageBreak = (alturaNecesaria: number) => {
       if (y + alturaNecesaria > 280) {
         pdf.addPage();
         y = 20;
       }
     };
-  
+
     const tituloSeccion = (titulo: string, color = AZUL) => {
       checkPageBreak(15);
       pdf.setFillColor(FONDO[0], FONDO[1], FONDO[2]);
       pdf.setDrawColor(BORDE[0], BORDE[1], BORDE[2]);
       pdf.roundedRect(12, y, 186, 10, 2, 2, 'FD');
-  
+
       pdf.setTextColor(color[0], color[1], color[2]);
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(12);
       pdf.text(titulo, 18, y + 6.5);
-  
+
       y += 15;
     };
-  
+
     // ======================================================
     // ENCABEZADO
     // ======================================================
     pdf.setFillColor(AZUL[0], AZUL[1], AZUL[2]);
     pdf.rect(0, 0, 210, 35, 'F');
-  
+
     pdf.addImage(logoIncomar, 'PNG', 10, 5, 22, 22);
-  
+
     pdf.setTextColor(255, 255, 255);
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(18);
     pdf.text('TRAZABILIDAD DE LOTE', 40, 15);
-  
+
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(11);
     pdf.text('Sistema de Gestión INCOMAR', 40, 22);
-  
+
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(10);
     pdf.text(`Lote: ${lote.codigo_lote}`, 40, 29);
-  
+
     pdf.setFontSize(9);
     pdf.text(`Emitido: ${new Date().toLocaleString('es-CL')}`, 145, 28);
-  
+
     // ======================================================
     // INFORMACIÓN DEL LOTE
     // ======================================================
     tituloSeccion('INFORMACIÓN DEL LOTE');
-  
+
     pdf.setTextColor(0, 0, 0);
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(10);
-  
+
     const infoLinea = (label: string, valor: string, x: number) => {
       pdf.setFont('helvetica', 'bold');
       pdf.text(label, x, y);
       pdf.setFont('helvetica', 'normal');
       pdf.text(valor, x + 30, y);
     };
-  
+
     infoLinea('Código:', lote.codigo_lote, 18);
     infoLinea('Producto:', productoNombre, 112);
     y += 7;
@@ -647,7 +724,7 @@ export function TrazabilidadPage() {
       infoLinea('Lote Origen:', loteOrigen, 112);
     }
     y += 10;
-  
+
     if (lote.observaciones) {
       pdf.setFont('helvetica', 'bold');
       pdf.text('Observaciones:', 18, y);
@@ -657,85 +734,111 @@ export function TrazabilidadPage() {
       pdf.text(obsLines, 18, y);
       y += obsLines.length * 5 + 5;
     }
-  
+
     y += 3;
-  
+
     // ======================================================
     // RESUMEN GENERAL
     // ======================================================
-    checkPageBreak(35);
+    checkPageBreak(43);
     tituloSeccion('RESUMEN GENERAL');
-  
+
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(10);
     pdf.text('Kilos Originales:', 18, y);
     pdf.setFont('helvetica', 'normal');
     pdf.text(`${kilosOriginales.toLocaleString()} kg`, 55, y);
-  
+
     pdf.setFont('helvetica', 'bold');
     pdf.text('Kilos Almacenados:', 112, y);
     pdf.setFont('helvetica', 'normal');
     pdf.text(`${kilosAlmacenados.toLocaleString()} kg`, 152, y);
     y += 7;
-  
+
     pdf.setFont('helvetica', 'bold');
-    pdf.text('Kilos Importados:', 18, y);
+    pdf.text('Kilos en Racks:', 18, y);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`${kilosEnRacks.toLocaleString()} kg`, 55, y);
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Kilos en Cámara:', 112, y);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`${kilosEnCamaras.toLocaleString()} kg`, 152, y);
+    y += 7;
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Kilos Enviados:', 18, y);
     pdf.setFont('helvetica', 'normal');
     pdf.text(`${kilosEnviados.toLocaleString()} kg`, 55, y);
-  
+
     pdf.setFont('helvetica', 'bold');
     pdf.text('Controles de Calidad:', 112, y);
     pdf.setFont('helvetica', 'normal');
     pdf.text(String(calidadLote.length), 152, y);
     y += 7;
-  
+
     pdf.setFont('helvetica', 'bold');
     pdf.text('Racks Involucrados:', 18, y);
     pdf.setFont('helvetica', 'normal');
     pdf.text(String(racksInvolucrados.size), 55, y);
-  
+
     pdf.setFont('helvetica', 'bold');
     pdf.text('Embarques Asociados:', 112, y);
     pdf.setFont('helvetica', 'normal');
     pdf.text(String(embarquesLote.length), 152, y);
     y += 12;
-  
+
     // ======================================================
-    // UBICACIÓN ACTUAL
+    // UBICACIÓN ACTUAL (racks + cámaras)
     // ======================================================
-    if (inventarioLote.length > 0) {
+    if (totalUbicaciones > 0) {
       checkPageBreak(20);
       tituloSeccion('UBICACIÓN ACTUAL');
-  
+
+      const filasRacks = inventarioLote.map((item) => {
+        const rackInfo = item.rack_id ? racksMap.get(item.rack_id) : null;
+        return [
+          rackInfo ? `Rack ${rackInfo.codigo}` : 'Rack sin registrar',
+          rackInfo?.ubicacion ?? '-',
+          tipoLabel(rackInfo?.bodega) ?? '-',
+          `${(item.kilos ?? 0).toLocaleString()} kg`,
+          item.cajas !== null ? String(item.cajas) : '-',
+          formatDate(item.fecha_ingreso),
+        ];
+      });
+
+      const filasCamaras = camarasLote.map((item) => {
+        const camaraInfo = item.camara_id ? camarasMap.get(item.camara_id) : null;
+        return [
+          camaraInfo?.nombre ?? 'Cámara sin registrar',
+          'Cámara',
+          tipoLabel(camaraInfo?.tipo) ?? '-',
+          `${(item.kilos ?? 0).toLocaleString()} kg`,
+          '-',
+          formatDate(item.fecha_ingreso),
+        ];
+      });
+
       autoTable(pdf, {
         startY: y,
         margin: { left: 12, right: 12 },
-        head: [['Rack', 'Ubicación', 'Kilos', 'Cajas', 'Desde']],
-        body: inventarioLote.map((item) => {
-          const rackInfo = item.rack_id ? racksMap.get(item.rack_id) : null;
-          return [
-            rackInfo?.codigo ?? 'Sin registrar',
-            rackInfo?.ubicacion ?? '-',
-            `${(item.kilos ?? 0).toLocaleString()} kg`,
-            item.cajas !== null ? String(item.cajas) : '-',
-            formatDate(item.fecha_ingreso),
-          ];
-        }),
+        head: [['Ubicación', 'Detalle', 'Cámara', 'Kilos', 'Cajas', 'Desde']],
+        body: [...filasRacks, ...filasCamaras],
         headStyles: { fillColor: AZUL as [number, number, number] },
         styles: { fontSize: 9 },
         alternateRowStyles: { fillColor: FONDO as [number, number, number] },
       });
-  
+
       y = (pdf as any).lastAutoTable.finalY + 12;
     }
-  
+
     // ======================================================
     // HISTORIAL DE MOVIMIENTOS
     // ======================================================
     if (movimientosLote.length > 0) {
       checkPageBreak(20);
       tituloSeccion('HISTORIAL DE MOVIMIENTOS', MORADO);
-  
+
       autoTable(pdf, {
         startY: y,
         margin: { left: 12, right: 12 },
@@ -759,17 +862,17 @@ export function TrazabilidadPage() {
         styles: { fontSize: 8 },
         alternateRowStyles: { fillColor: FONDO as [number, number, number] },
       });
-  
+
       y = (pdf as any).lastAutoTable.finalY + 12;
     }
-  
+
     // ======================================================
     // CONTROL DE CALIDAD
     // ======================================================
     if (calidadLote.length > 0) {
       checkPageBreak(20);
       tituloSeccion('CONTROL DE CALIDAD/ RECEPCIÓN', VERDE);
-  
+
       autoTable(pdf, {
         startY: y,
         margin: { left: 12, right: 12 },
@@ -789,17 +892,17 @@ export function TrazabilidadPage() {
         styles: { fontSize: 8 },
         alternateRowStyles: { fillColor: FONDO as [number, number, number] },
       });
-  
+
       y = (pdf as any).lastAutoTable.finalY + 12;
     }
-  
+
     // ======================================================
     // EMBARQUES
     // ======================================================
     if (embarquesLote.length > 0) {
       checkPageBreak(20);
       tituloSeccion('EMBARQUES', NARANJA);
-  
+
       autoTable(pdf, {
         startY: y,
         margin: { left: 12, right: 12 },
@@ -820,17 +923,17 @@ export function TrazabilidadPage() {
         styles: { fontSize: 8 },
         alternateRowStyles: { fillColor: FONDO as [number, number, number] },
       });
-  
+
       y = (pdf as any).lastAutoTable.finalY + 12;
     }
-  
+
     // ======================================================
     // PIE DE DOCUMENTO
     // ======================================================
     checkPageBreak(20);
     pdf.setDrawColor(200);
     pdf.line(15, y, 195, y);
-  
+
     pdf.setFont('helvetica', 'italic');
     pdf.setFontSize(9);
     pdf.setTextColor(120);
@@ -842,7 +945,6 @@ export function TrazabilidadPage() {
     // ======================================================
     pdf.save(`Trazabilidad_${lote.codigo_lote}_${new Date().toISOString().slice(0, 10)}.pdf`);
   };
-  
 
   return (
     <div className="space-y-6">
@@ -1015,6 +1117,9 @@ export function TrazabilidadPage() {
                 <div className="p-4 bg-green-50 rounded-lg border border-green-100">
                   <p className="text-sm text-gray-700 mb-1">Kilos Almacenados Hoy</p>
                   <p className="text-green-700">{kilosAlmacenados.toLocaleString()} kg</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Racks: {kilosEnRacks.toLocaleString()} kg · Cámara: {kilosEnCamaras.toLocaleString()} kg
+                  </p>
                 </div>
                 <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100">
                   <p className="text-sm text-gray-700 mb-1">Kilos Enviados</p>
@@ -1028,7 +1133,7 @@ export function TrazabilidadPage() {
                 )}
                 {cajasAlmacenadas !== null && (
                   <div className="p-4 bg-green-50 rounded-lg border border-green-100">
-                    <p className="text-sm text-gray-700 mb-1">Cajas Almacenadas Hoy</p>
+                    <p className="text-sm text-gray-700 mb-1">Cajas en Racks</p>
                     <p className="text-green-700">{cajasAlmacenadas.toLocaleString()}</p>
                   </div>
                 )}
@@ -1053,22 +1158,52 @@ export function TrazabilidadPage() {
               </div>
             </div>
 
-            {/* Stock / ubicación actual */}
+            {/* Stock / ubicación actual (racks + cámaras) */}
             <div className="bg-white p-6 rounded-xl border border-gray-200">
               <div className="flex items-center gap-3 mb-4">
                 <MapPin className="w-6 h-6 text-yellow-600" />
-                <h3 className="text-gray-900">Ubicación Actual ({inventarioLote.length})</h3>
+                <h3 className="text-gray-900">Ubicación Actual ({totalUbicaciones})</h3>
               </div>
-              {inventarioLote.length > 0 ? (
+              {totalUbicaciones > 0 ? (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                     {inventarioLote.map((item) => {
                       const rackInfo = item.rack_id ? racksMap.get(item.rack_id) : null;
+                      const tipo = tipoLabel(rackInfo?.bodega);
                       return (
                         <div key={item.id} className="p-4 bg-gray-50 rounded-lg">
-                          <p className="text-gray-900 mb-1">Rack {rackInfo?.codigo || 'Sin registrar'}</p>
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-gray-900">Rack {rackInfo?.codigo || 'Sin registrar'}</p>
+                            {tipo && (
+                              <span className={`px-2 py-0.5 rounded text-xs ${tipoBadgeClass(rackInfo?.bodega)}`}>
+                                Cámara {tipo}
+                              </span>
+                            )}
+                          </div>
                           {rackInfo?.ubicacion && <p className="text-xs text-gray-500 mb-2">{rackInfo.ubicacion}</p>}
                           <p className="text-sm text-gray-900">{formatCantidad(item.kilos, item.cajas)}</p>
+                          <p className="text-xs text-gray-500 mt-1">Desde: {formatDate(item.fecha_ingreso)}</p>
+                        </div>
+                      );
+                    })}
+
+                    {camarasLote.map((item) => {
+                      const camaraInfo = item.camara_id ? camarasMap.get(item.camara_id) : null;
+                      const tipo = tipoLabel(camaraInfo?.tipo);
+                      return (
+                        <div key={item.id} className="p-4 bg-cyan-50 rounded-lg border border-cyan-100">
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-gray-900 flex items-center gap-2">
+                              <Snowflake className="w-4 h-4 text-cyan-600" />
+                              {camaraInfo?.nombre || 'Cámara sin registrar'}
+                            </p>
+                            {tipo && (
+                              <span className={`px-2 py-0.5 rounded text-xs ${tipoBadgeClass(camaraInfo?.tipo)}`}>
+                                Cámara {tipo}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-900">{formatCantidad(item.kilos, null)}</p>
                           <p className="text-xs text-gray-500 mt-1">Desde: {formatDate(item.fecha_ingreso)}</p>
                         </div>
                       );
