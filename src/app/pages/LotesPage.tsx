@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Search, Plus, Eye, Edit2,Trash2, PackageCheck, AlertTriangle, FileDown } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Search, Plus, Eye, Edit2,Trash2, PackageCheck, AlertTriangle, FileDown, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../utils/supabase';
 import { LoteModal } from '../components/Productos/LoteModal';
@@ -30,10 +30,71 @@ import autoTable from 'jspdf-autotable';
   estado_producto?: { nombre: string };
 }
 
+type FiltroFecha = 'todos' | 'hoy' | '7dias' | 'mes';
+
+interface Filtros {
+  codigo_lote: string;
+  especie: string;
+  planta: string;
+  kilosMin: string;
+  kilosMax: string;
+  fecha: FiltroFecha;
+  anio: string; // '' = todos los años
+  estado: string; // 'todos' | nombre de estado en minúsculas
+}
+
+const FILTROS_INICIALES: Filtros = {
+  codigo_lote: '',
+  especie: '',
+  planta: '',
+  kilosMin: '',
+  kilosMax: '',
+  fecha: 'todos',
+  anio: '',
+  estado: 'todos',
+};
+
+const OPCIONES_FECHA: { valor: FiltroFecha; etiqueta: string }[] = [
+  { valor: 'todos', etiqueta: 'Todas' },
+  { valor: 'hoy', etiqueta: 'Hoy' },
+  { valor: '7dias', etiqueta: 'Últimos 7 días' },
+  { valor: 'mes', etiqueta: 'Este mes' },
+];
+
+function fechaEnRango(fechaISO: string, filtro: FiltroFecha): boolean {
+  if (filtro === 'todos') return true;
+
+  const fecha = new Date(fechaISO);
+  const ahora = new Date();
+
+  if (filtro === 'hoy') {
+    return (
+      fecha.getFullYear() === ahora.getFullYear() &&
+      fecha.getMonth() === ahora.getMonth() &&
+      fecha.getDate() === ahora.getDate()
+    );
+  }
+
+  if (filtro === '7dias') {
+    const hace7dias = new Date(ahora);
+    hace7dias.setDate(ahora.getDate() - 7);
+    hace7dias.setHours(0, 0, 0, 0);
+    return fecha >= hace7dias;
+  }
+
+  if (filtro === 'mes') {
+    return (
+      fecha.getFullYear() === ahora.getFullYear() &&
+      fecha.getMonth() === ahora.getMonth()
+    );
+  }
+
+  return true;
+}
+
   export function LotesPage() {
     const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState('todos');
 
   const [lotes, setLotes] =
     useState<Lote[]>([]);
@@ -57,36 +118,77 @@ import autoTable from 'jspdf-autotable';
 
     const [generandoPDFGeneral, setGenerandoPDFGeneral] = useState(false);
 
-  const lotesFiltrados = lotes.filter((lote) => {
+    const [filtros, setFiltros] = useState<Filtros>(FILTROS_INICIALES);
+    const [mostrarFiltros, setMostrarFiltros] = useState(true);
 
-  const matchesSearch =
+    function actualizarFiltro<K extends keyof Filtros>(campo: K, valor: Filtros[K]) {
+      setFiltros((prev) => ({ ...prev, [campo]: valor }));
+    }
 
-    lote.codigo_lote
-      ?.toLowerCase()
-      .includes(searchTerm.toLowerCase())
+    function limpiarFiltros() {
+      setFiltros(FILTROS_INICIALES);
+      setSearchTerm('');
+    }
 
-    ||
+    const hayFiltrosActivos =
+      searchTerm !== '' ||
+      Object.entries(filtros).some(([key, value]) =>
+        key === 'estado' || key === 'fecha' ? value !== 'todos' : value !== ''
+      );
 
-    lote.especie?.nombre
-      ?.toLowerCase()
-      .includes(searchTerm.toLowerCase());
+    const aniosDisponibles = useMemo(() => {
+      const anios = new Set(lotes.map((l) => new Date(l.fecha_produccion).getFullYear()));
+      return Array.from(anios).sort((a, b) => b - a); // más reciente primero
+    }, [lotes]);
 
-    const matchesEstado =
-    filtroEstado === 'todos'
-    ||
-    lote.estado_producto?.nombre
-      ?.toLowerCase()
-      .trim() === filtroEstado;
+  const lotesFiltrados = useMemo(() => {
+    return lotes.filter((lote) => {
+      const matchesSearch =
+        searchTerm === '' ||
+        lote.codigo_lote?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        lote.especie?.nombre?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    console.log(
-      'Estado BD:',
-      lote.estado_producto?.nombre,
-      'Filtro:',
-      filtroEstado
-    );
+      if (!matchesSearch) return false;
 
-  return matchesSearch && matchesEstado;
-});
+      if (
+        filtros.codigo_lote &&
+        !lote.codigo_lote?.toLowerCase().includes(filtros.codigo_lote.toLowerCase())
+      )
+        return false;
+
+      if (
+        filtros.especie &&
+        !(lote.especie?.nombre ?? '').toLowerCase().includes(filtros.especie.toLowerCase())
+      )
+        return false;
+
+      if (
+        filtros.planta &&
+        !(lote.planta?.nombre ?? '').toLowerCase().includes(filtros.planta.toLowerCase())
+      )
+        return false;
+
+      const kilos = Number(lote.kilos_netos) || 0;
+      if (filtros.kilosMin && kilos < Number(filtros.kilosMin)) return false;
+      if (filtros.kilosMax && kilos > Number(filtros.kilosMax)) return false;
+
+      if (!fechaEnRango(lote.fecha_produccion, filtros.fecha)) return false;
+
+      if (
+        filtros.anio &&
+        new Date(lote.fecha_produccion).getFullYear() !== Number(filtros.anio)
+      )
+        return false;
+
+      const matchesEstado =
+        filtros.estado === 'todos' ||
+        lote.estado_producto?.nombre?.toLowerCase().trim() === filtros.estado;
+
+      if (!matchesEstado) return false;
+
+      return true;
+    });
+  }, [lotes, searchTerm, filtros]);
 
   const formatDate = (dateString: string) => {
     return new Intl.DateTimeFormat('es-CL', {
@@ -777,7 +879,7 @@ const generarPDFGeneral = async () => {
       </div>
 
       <div className="bg-white p-6 rounded-xl border border-gray-200">
-        <div className="flex flex-col md:flex-row gap-4 mb-6">
+        <div className="mb-4 flex flex-col md:flex-row md:items-center gap-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
@@ -789,17 +891,137 @@ const generarPDFGeneral = async () => {
             />
           </div>
 
-          <select
-            value={filtroEstado}
-            onChange={(e) => setFiltroEstado(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="todos">Todos los estados</option>
-            <option value="activo">Activo</option>
-            <option value="procesando">Procesando</option>
-            <option value="procesado">Procesado</option>
-            <option value="despachado">Despachado</option>
-          </select>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setMostrarFiltros((v) => !v)}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              {mostrarFiltros ? 'Ocultar filtros' : 'Mostrar filtros'}
+            </button>
+
+            {hayFiltrosActivos && (
+              <button
+                onClick={limpiarFiltros}
+                className="flex items-center gap-1 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+                Limpiar filtros
+              </button>
+            )}
+          </div>
+        </div>
+
+        {mostrarFiltros && (
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Lote Interno</label>
+              <input
+                type="text"
+                value={filtros.codigo_lote}
+                onChange={(e) => actualizarFiltro('codigo_lote', e.target.value)}
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+                placeholder="Filtrar..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Producto</label>
+              <input
+                type="text"
+                value={filtros.especie}
+                onChange={(e) => actualizarFiltro('especie', e.target.value)}
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+                placeholder="Filtrar..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Planta</label>
+              <input
+                type="text"
+                value={filtros.planta}
+                onChange={(e) => actualizarFiltro('planta', e.target.value)}
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+                placeholder="Filtrar..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Estado</label>
+              <select
+                value={filtros.estado}
+                onChange={(e) => actualizarFiltro('estado', e.target.value)}
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
+              >
+                <option value="todos">Todos los estados</option>
+                <option value="activo">Activo</option>
+                <option value="procesando">Procesando</option>
+                <option value="procesado">Procesado</option>
+                <option value="despachado">Despachado</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Kilos (mín - máx)</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={filtros.kilosMin}
+                  onChange={(e) => actualizarFiltro('kilosMin', e.target.value)}
+                  className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+                  placeholder="Mín"
+                />
+                <span className="text-gray-400">-</span>
+                <input
+                  type="number"
+                  value={filtros.kilosMax}
+                  onChange={(e) => actualizarFiltro('kilosMax', e.target.value)}
+                  className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+                  placeholder="Máx"
+                />
+              </div>
+            </div>
+
+            <div className="sm:col-span-2 lg:col-span-2">
+              <label className="block text-xs text-gray-500 mb-1">Fecha de producción</label>
+              <div className="flex flex-wrap gap-1.5">
+                {OPCIONES_FECHA.map((opcion) => (
+                  <button
+                    key={opcion.valor}
+                    type="button"
+                    onClick={() => actualizarFiltro('fecha', opcion.valor)}
+                    className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                      filtros.fecha === opcion.valor
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
+                    }`}
+                  >
+                    {opcion.etiqueta}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Año</label>
+              <select
+                value={filtros.anio}
+                onChange={(e) => actualizarFiltro('anio', e.target.value)}
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
+              >
+                <option value="">Todos los años</option>
+                {aniosDisponibles.map((anio) => (
+                  <option key={anio} value={anio}>
+                    {anio}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        <div className="mb-2 text-sm text-gray-500">
+          Mostrando {lotesFiltrados.length} de {lotes.length} lotes
         </div>
 
         <div className="overflow-x-auto">
