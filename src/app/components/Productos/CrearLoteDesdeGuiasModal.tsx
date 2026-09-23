@@ -19,7 +19,27 @@ guias: Guia[];
 onClose: () => void;
 onSuccess: () => void;
 }
+
 const KILOS_POR_CAJA = 20;
+const redondear = (n: number) => Math.round(n * 100) / 100;
+
+interface SubLote {
+key: string;
+sufijo: string;
+presentacionId: string;
+kilos: string;
+cajas: string;
+}
+
+function nuevaFilaSubLote(): SubLote {
+return {
+key: crypto.randomUUID(),
+sufijo: '',
+presentacionId: '',
+kilos: '',
+cajas: '',
+};
+}
 
 export function CrearLoteDesdeGuiasModal({ guias, onClose, onSuccess }: Props) {
 const [presentaciones, setPresentaciones] = useState<Opcion[]>([]);
@@ -27,24 +47,29 @@ const [estados, setEstados] = useState<Opcion[]>([]);
 const [plantas, setPlantas] = useState<Opcion[]>([]);
 const [turnos, setTurnos] = useState<Opcion[]>([]);
 
-const [codigoLote, setCodigoLote] = useState('');
-const [presentacionId, setPresentacionId] = useState('');
+// Datos compartidos por todo el lote padre / lotes hijos
+const [codigoLoteBase, setCodigoLoteBase] = useState('');
 const [estadoId, setEstadoId] = useState('');
 const [plantaId, setPlantaId] = useState('');
 const [turnoId, setTurnoId] = useState('');
 const [fechaProduccion, setFechaProduccion] = useState('');
-const [cantidadCajas, setCantidadCajas] = useState('');
 const [temperatura, setTemperatura] = useState('');
 const [observaciones, setObservaciones] = useState('');
+
+// Subdivisión en presentaciones
+const [subLotes, setSubLotes] = useState<SubLote[]>([nuevaFilaSubLote()]);
 
 const [guardando, setGuardando] = useState(false);
 
 const kilosTotal = guias.reduce((sum, g) => sum + (Number(g.kilos) || 0), 0);
-const cajasCompletas = Math.floor(kilosTotal / KILOS_POR_CAJA);
-const kilosSobrantes =
-  Math.round((kilosTotal - cajasCompletas * KILOS_POR_CAJA) * 100) / 100;
 const especieId = guias[0]?.especie_id;
 const mismaEspecie = guias.every((g) => g.especie_id === especieId);
+
+const kilosAsignados = subLotes.reduce(
+(sum, s) => sum + (Number(s.kilos) || 0),
+0
+);
+const kilosRestantes = Math.round((kilosTotal - kilosAsignados) * 100) / 100;
 
 useEffect(() => {
 cargarCombos();
@@ -72,9 +97,74 @@ setPlantas(plantasRes.data ?? []);
 setTurnos(turnosRes.data ?? []);
 }
 
+function agregarSubLote() {
+setSubLotes((prev) => [...prev, nuevaFilaSubLote()]);
+}
+
+function eliminarSubLote(key: string) {
+setSubLotes((prev) => prev.filter((s) => s.key !== key));
+}
+
+function actualizarSubLote(key: string, campo: keyof SubLote, valor: string) {
+setSubLotes((prev) =>
+    prev.map((s) => (s.key === key ? { ...s, [campo]: valor } : s))
+);
+}
+
+// Al escribir kilos en una fila, se completan las cajas (cajas completas de 20 kg).
+function cambiarKilosSubLote(key: string, valor: string) {
+setSubLotes((prev) =>
+    prev.map((s) => {
+    if (s.key !== key) return s;
+
+    const n = Number(valor);
+    if (valor === '' || !Number.isFinite(n) || n <= 0) {
+        return { ...s, kilos: valor };
+    }
+
+    const cajasAuto = Math.floor(n / KILOS_POR_CAJA);
+    return { ...s, kilos: valor, cajas: cajasAuto > 0 ? String(cajasAuto) : '' };
+    })
+);
+}
+
+// Al escribir cajas en una fila, se completan los kilos (cajas x 20 kg).
+function cambiarCajasSubLote(key: string, valor: string) {
+setSubLotes((prev) =>
+    prev.map((s) => {
+    if (s.key !== key) return s;
+
+    const n = Number(valor);
+    if (valor === '' || !Number.isFinite(n) || n <= 0) {
+        return { ...s, cajas: valor };
+    }
+
+    return { ...s, cajas: valor, kilos: String(redondear(n * KILOS_POR_CAJA)) };
+    })
+);
+}
+
+function referenciaKilosCajas(kilos: string) {
+const k = Number(kilos) || 0;
+if (k <= 0) return null;
+const completas = Math.floor(k / KILOS_POR_CAJA);
+const sobrante = redondear(k - completas * KILOS_POR_CAJA);
+return `${k} kg ÷ ${KILOS_POR_CAJA} kg = ${completas} cajas${
+    sobrante > 0 ? ` + ${sobrante} kg sobrantes` : ''
+}`;
+}
+
+function referenciaCajasKilos(cajas: string) {
+const c = Number(cajas) || 0;
+if (c <= 0) return null;
+return `${c} cajas × ${KILOS_POR_CAJA} kg = ${redondear(
+    c * KILOS_POR_CAJA
+).toLocaleString()} kg`;
+}
+
 async function guardarLote() {
-if (!codigoLote.trim()) {
-    alert('Debe ingresar el código del lote interno');
+if (!codigoLoteBase.trim()) {
+    alert('Debe ingresar el código base del lote interno (ej: 406)');
     return;
 }
 
@@ -88,43 +178,105 @@ if (!fechaProduccion) {
     return;
 }
 
+if (subLotes.length === 0) {
+    alert('Debe agregar al menos una presentación');
+    return;
+}
+
+for (const s of subLotes) {
+    if (!s.sufijo.trim()) {
+    alert('Todas las filas deben tener un sufijo (ej: E, F, HGT)');
+    return;
+    }
+    if (!s.presentacionId) {
+    alert(`Debe seleccionar la presentación para el sufijo "${s.sufijo}"`);
+    return;
+    }
+    if (!s.kilos || Number(s.kilos) <= 0) {
+    alert(`Debe ingresar los kilos para "${codigoLoteBase}-${s.sufijo}"`);
+    return;
+    }
+}
+
+const sufijosUnicos = new Set(subLotes.map((s) => s.sufijo.trim().toUpperCase()));
+if (sufijosUnicos.size !== subLotes.length) {
+    alert('Hay sufijos repetidos. Cada corte/presentación debe tener un sufijo distinto');
+    return;
+}
+
+if (kilosAsignados > kilosTotal) {
+    alert(
+    `Los kilos asignados (${kilosAsignados} kg) superan el total de las guías (${kilosTotal} kg)`
+    );
+    return;
+}
+
+if (
+    kilosRestantes > 0 &&
+    !confirm(
+    `Quedan ${kilosRestantes} kg sin asignar a ninguna presentación (se perderán como merma o quedarán solo en el lote padre). ¿Continuar de todas formas?`
+    )
+) {
+    return;
+}
+
 try {
     setGuardando(true);
 
-    const { data: nuevoLote, error: errorLote } = await supabase
+    // 1. Crear el lote padre (materia prima cruda, sin presentación propia)
+    const { data: lotePadre, error: errorPadre } = await supabase
     .from('lotes')
     .insert({
-        codigo_lote: codigoLote.trim(),
+        codigo_lote: codigoLoteBase.trim(),
         especie_id: especieId,
-        presentacion_id: presentacionId || null,
+        presentacion_id: null,
         estado_producto_id: estadoId || null,
         planta_id: plantaId || null,
         turno_id: turnoId || null,
         fecha_produccion: fechaProduccion,
         kilos_netos: kilosTotal,
-        cantidad_cajas: cantidadCajas ? Number(cantidadCajas) : null,
         temperatura: temperatura ? Number(temperatura) : null,
         observaciones: observaciones.trim(),
     })
     .select()
     .single();
 
-    if (errorLote) throw errorLote;
+    if (errorPadre) throw errorPadre;
 
+    // 2. Enlazar las guías al lote padre
     const idsGuias = guias.map((g) => g.id);
 
     const { error: errorGuias } = await supabase
     .from('guias')
-    .update({ lote_id: nuevoLote.id })
+    .update({ lote_id: lotePadre.id })
     .in('id', idsGuias);
 
     if (errorGuias) throw errorGuias;
+
+    // 3. Crear un lote hijo por cada presentación/corte
+    const filasHijos = subLotes.map((s) => ({
+    codigo_lote: `${codigoLoteBase.trim()}-${s.sufijo.trim().toUpperCase()}`,
+    especie_id: especieId,
+    presentacion_id: s.presentacionId,
+    estado_producto_id: estadoId || null,
+    planta_id: plantaId || null,
+    turno_id: turnoId || null,
+    fecha_produccion: fechaProduccion,
+    kilos_netos: Number(s.kilos),
+    cantidad_cajas: s.cajas ? Number(s.cajas) : null,
+    temperatura: temperatura ? Number(temperatura) : null,
+    lote_padre_id: lotePadre.id,
+    }));
+
+    const { error: errorHijos } = await supabase.from('lotes').insert(filasHijos);
+
+    if (errorHijos) throw errorHijos;
 
     onSuccess();
     onClose();
 } catch (error) {
     console.error(error);
-    alert('Error al crear el lote a partir de las guías');
+    alert('Error al crear el lote y sus presentaciones a partir de las guías');
 } finally {
     setGuardando(false);
 }
@@ -132,13 +284,14 @@ try {
 
 return (
 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div className="bg-white rounded-xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+    <div className="bg-white rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
 
     <h2 className="text-2xl font-semibold mb-2">
         Crear Lote Interno desde Guías
     </h2>
     <p className="text-sm text-gray-500 mb-6">
-        Se generará un nuevo lote a partir de {guias.length} guía(s) seleccionada(s)
+        Se generará un lote base a partir de {guias.length} guía(s) seleccionada(s), subdividido en las
+        presentaciones/cortes que definas abajo.
     </p>
 
     {/* Resumen de guías seleccionadas */}
@@ -161,18 +314,22 @@ return (
         )}
     </div>
 
+    {/* Datos compartidos del lote */}
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-            Código Lote Interno
+            Código Lote Interno (base)
         </label>
         <input
             type="text"
-            value={codigoLote}
-            onChange={(e) => setCodigoLote(e.target.value)}
+            value={codigoLoteBase}
+            onChange={(e) => setCodigoLoteBase(e.target.value)}
             className="w-full border rounded-lg p-2"
-            placeholder="Ej: JB122"
+            placeholder="Ej: 406"
         />
+        <p className="text-xs text-gray-400 mt-1">
+            Cada presentación se guardará como {codigoLoteBase || '406'}-[sufijo]
+        </p>
         </div>
 
         <div>
@@ -185,22 +342,6 @@ return (
             onChange={(e) => setFechaProduccion(e.target.value)}
             className="w-full border rounded-lg p-2"
         />
-        </div>
-
-        <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-            Presentación
-        </label>
-        <select
-            value={presentacionId}
-            onChange={(e) => setPresentacionId(e.target.value)}
-            className="w-full border rounded-lg p-2"
-        >
-            <option value="">Seleccione presentación</option>
-            {presentaciones.map((p) => (
-            <option key={p.id} value={p.id}>{p.nombre}</option>
-            ))}
-        </select>
         </div>
 
         <div>
@@ -252,23 +393,6 @@ return (
         </div>
 
         <div>
-            <label className="block text-sm font-medium text-gray-700">
-                Cantidad de Cajas
-            </label>
-            <p className="text-xs text-gray-500 mb-1">
-                Referencia: {kilosTotal.toLocaleString()} kg ÷ {KILOS_POR_CAJA} kg ={' '}
-                {cajasCompletas.toLocaleString()} cajas
-                {kilosSobrantes > 0 && ` + ${kilosSobrantes.toLocaleString()} kg sobrantes`}
-            </p>
-            <input
-                type="number"
-                value={cantidadCajas}
-                onChange={(e) => setCantidadCajas(e.target.value)}
-                className="w-full border rounded-lg p-2"
-            />
-            </div>
-
-        <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
             Temperatura
         </label>
@@ -280,6 +404,126 @@ return (
             className="w-full border rounded-lg p-2"
         />
         </div>
+    </div>
+
+    {/* Subdivisión en presentaciones */}
+    <div className="mt-6">
+        <div className="flex items-center justify-between mb-2">
+        <label className="block text-sm font-medium text-gray-700">
+            Subdivisión por presentación / corte
+        </label>
+        <span
+            className={`text-sm font-semibold ${
+            kilosRestantes < 0 ? 'text-red-600' : 'text-gray-600'
+            }`}
+        >
+            Asignado: {kilosAsignados.toLocaleString()} / {kilosTotal.toLocaleString()} kg
+            {kilosRestantes !== 0 && ` (restan ${kilosRestantes.toLocaleString()} kg)`}
+        </span>
+        </div>
+
+        <div className="space-y-3">
+        {subLotes.map((s, idx) => (
+            <div
+            key={s.key}
+            className="border rounded-lg p-3 grid grid-cols-1 md:grid-cols-12 gap-2 items-start"
+            >
+            <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                Sufijo
+                </label>
+                <input
+                type="text"
+                value={s.sufijo}
+                onChange={(e) =>
+                    actualizarSubLote(s.key, 'sufijo', e.target.value)
+                }
+                className="w-full border rounded-lg p-2"
+                placeholder="Ej: E, F, HGT"
+                />
+            </div>
+
+            <div className="md:col-span-4">
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                Presentación
+                </label>
+                <select
+                value={s.presentacionId}
+                onChange={(e) =>
+                    actualizarSubLote(s.key, 'presentacionId', e.target.value)
+                }
+                className="w-full border rounded-lg p-2"
+                >
+                <option value="">Seleccione presentación</option>
+                {presentaciones.map((p) => (
+                    <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))}
+                </select>
+            </div>
+
+            <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                Kilos
+                </label>
+                <input
+                type="number"
+                value={s.kilos}
+                onChange={(e) => cambiarKilosSubLote(s.key, e.target.value)}
+                className="w-full border rounded-lg p-2"
+                />
+                {referenciaKilosCajas(s.kilos) && (
+                <p className="text-xs text-gray-400 mt-1">
+                    {referenciaKilosCajas(s.kilos)}
+                </p>
+                )}
+            </div>
+
+            <div className="md:col-span-3">
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                Cajas
+                </label>
+                <input
+                type="number"
+                value={s.cajas}
+                onChange={(e) => cambiarCajasSubLote(s.key, e.target.value)}
+                className="w-full border rounded-lg p-2"
+                />
+                {referenciaCajasKilos(s.cajas) && (
+                <p className="text-xs text-gray-400 mt-1">
+                    {referenciaCajasKilos(s.cajas)}
+                </p>
+                )}
+                <p className="text-xs text-gray-400 mt-1">
+                1 caja = {KILOS_POR_CAJA} kg (se completa el otro campo solo)
+                </p>
+            </div>
+
+            <div className="md:col-span-1 flex md:justify-end pt-6">
+                {subLotes.length > 1 && (
+                <button
+                    type="button"
+                    onClick={() => eliminarSubLote(s.key)}
+                    className="text-red-500 text-sm hover:underline"
+                >
+                    Quitar
+                </button>
+                )}
+            </div>
+
+            <p className="md:col-span-12 text-xs text-gray-400">
+                Código resultante: {codigoLoteBase || '406'}-{s.sufijo.toUpperCase() || `?${idx + 1}`}
+            </p>
+            </div>
+        ))}
+        </div>
+
+        <button
+        type="button"
+        onClick={agregarSubLote}
+        className="mt-3 px-3 py-2 text-sm border border-dashed rounded-lg text-blue-600 hover:bg-blue-50"
+        >
+        + Agregar presentación
+        </button>
     </div>
 
     <div className="mt-4">
@@ -307,7 +551,7 @@ return (
         disabled={guardando || !mismaEspecie}
         className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:bg-blue-300"
         >
-        {guardando ? 'Creando...' : 'Crear Lote'}
+        {guardando ? 'Creando...' : 'Crear Lote y Presentaciones'}
         </button>
     </div>
 
