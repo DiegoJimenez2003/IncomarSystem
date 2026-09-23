@@ -42,6 +42,7 @@ const [destino, setDestino] = useState('');
 const [kilos, setKilos] = useState('');
 const [fechaGuia, setFechaGuia] = useState('');
 const [observaciones, setObservaciones] = useState('');
+const [errorFecha, setErrorFecha] = useState('');
 
 const [guardando, setGuardando] = useState(false);
 
@@ -72,6 +73,27 @@ if (guia.fecha_guia) {
 
 }, [guia]);
 
+function validarFecha(valor: string) {
+    if (!valor) {
+        setErrorFecha('');
+        return true;
+    }
+
+    const anio = Number(valor.slice(0, 4));
+    const anioActual = new Date().getFullYear();
+
+    // Permite algunos años de margen (guías antiguas o de próxima temporada)
+    if (!anio || anio < 2000 || anio > anioActual + 2) {
+        setErrorFecha(
+        `Año inválido (${anio}). Revisa que hayas escrito el año correctamente, por ejemplo ${anioActual}.`
+        );
+        return false;
+    }
+
+    setErrorFecha('');
+    return true;
+    }
+
 async function cargarEspecies() {
 
 const { data, error } = await supabase
@@ -93,34 +115,40 @@ if (!guia && data && data.length > 0) {
 
 async function guardarGuia() {
 
-if (!numeroGuia.trim()) {
-    alert('Debe ingresar el número de guía');
-    return;
-}
+    if (!numeroGuia.trim()) {
+        alert('Debe ingresar el número de guía');
+        return;
+    }
 
-if (!loteOrigen.trim()) {
-    alert('Debe ingresar el lote origen');
-    return;
-}
+    if (!loteOrigen.trim()) {
+        alert('Debe ingresar el lote origen');
+        return;
+    }
 
-if (!especieId) {
-    alert('Debe seleccionar una especie');
-    return;
-}
+    if (!especieId) {
+        alert('Debe seleccionar una especie');
+        return;
+    }
 
-if (!fechaGuia) {
-    alert('Debe seleccionar fecha y hora');
-    return;
-}
+    if (!fechaGuia) {
+        alert('Debe seleccionar fecha y hora');
+        return;
+    }
 
-if (!kilos || Number(kilos) <= 0) {
-    alert('Debe ingresar los kilos');
-    return;
-}
+    // 👇 ESTO ES LO NUEVO (el paso 4) — va justo después de la validación de arriba
+    if (!validarFecha(fechaGuia)) {
+        alert('La fecha ingresada no es válida. Revisa el año antes de guardar.');
+        return;
+    }
 
-try {
+    if (!kilos || Number(kilos) <= 0) {
+        alert('Debe ingresar los kilos');
+        return;
+    }
 
-    setGuardando(true);
+    try {
+        setGuardando(true);
+
 
     const datos = {
     numero_guia: numeroGuia.trim(),
@@ -290,14 +318,23 @@ return (
         className="border rounded-lg p-2"
         />
 
-        <input
-        type="datetime-local"
-        value={fechaGuia}
-        onChange={(e) =>
-            setFechaGuia(e.target.value)
-        }
-        className="border rounded-lg p-2"
-        />
+        <div>
+            <input
+                type="datetime-local"
+                value={fechaGuia}
+                onChange={(e) => {
+                setFechaGuia(e.target.value);
+                validarFecha(e.target.value);
+                }}
+                className={`w-full border rounded-lg p-2 ${
+                errorFecha ? 'border-red-400' : ''
+                }`}
+            />
+            {errorFecha && (
+                <p className="text-xs text-red-600 mt-1">{errorFecha}</p>
+            )}
+            </div>
+            
 
     </div>
 
@@ -331,7 +368,7 @@ return (
             ? 'Actualizar'
             : 'Guardar'}
         </button>
-
+            
     </div>
 
     </div>
