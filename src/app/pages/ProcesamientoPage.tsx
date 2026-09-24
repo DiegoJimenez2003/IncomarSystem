@@ -675,7 +675,7 @@ export function ProcesamientoPage() {
                 </th>
 
                 <th className="text-left py-3 px-4 text-gray-700">
-                  Merma
+                  Merma/carnada/desecho
                 </th>
 
                 <th className="text-left py-3 px-4 text-gray-700">
@@ -953,7 +953,7 @@ export function ProcesamientoPage() {
         <div className="bg-white p-6 rounded-xl border border-gray-200">
 
           <p className="text-gray-600 mb-2">
-            Total Merma
+            Total Merma/carnada/desecho
           </p>
 
           <p className="text-red-700 text-xl font-semibold">

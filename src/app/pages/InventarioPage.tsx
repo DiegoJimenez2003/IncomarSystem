@@ -18,7 +18,7 @@ interface ItemInventario {
   camara_id: string | null;
   tipo: string | null; // 'PAC' | 'NO_PAC'
   kilos: number;
-  cajas: number | null; // las cámaras no registran cajas
+  cajas: number | null;
   fecha_ingreso: string | null;
 }
 
@@ -93,6 +93,7 @@ export function InventarioPage() {
         .select(`
           id,
           kilos,
+          cajas,
           fecha_ingreso,
           lote_id,
           camara_id,
@@ -149,7 +150,7 @@ export function InventarioPage() {
       camara_id: null,
       tipo: d.racks?.bodega ?? null,
       kilos: Number(d.kilos) || 0,
-      cajas: Number(d.cajas) || 0,
+      cajas: d.cajas !== null && d.cajas !== undefined ? Number(d.cajas) : null,
       fecha_ingreso: d.fecha_ingreso ?? null,
     }));
 
@@ -165,7 +166,7 @@ export function InventarioPage() {
       camara_id: d.camara_id ?? null,
       tipo: d.camaras?.tipo ?? null,
       kilos: Number(d.kilos) || 0,
-      cajas: null,
+      cajas: d.cajas !== null && d.cajas !== undefined ? Number(d.cajas) : null,
       fecha_ingreso: d.fecha_ingreso ?? null,
     }));
 
@@ -205,7 +206,15 @@ export function InventarioPage() {
   const kilosEnCamaras = itemsFiltrados
     .filter((i) => i.origen === 'camara')
     .reduce((sum, i) => sum + i.kilos, 0);
+
   const totalCajas = itemsFiltrados.reduce((sum, i) => sum + (i.cajas ?? 0), 0);
+  const cajasEnRacks = itemsFiltrados
+    .filter((i) => i.origen === 'rack')
+    .reduce((sum, i) => sum + (i.cajas ?? 0), 0);
+  const cajasEnCamaras = itemsFiltrados
+    .filter((i) => i.origen === 'camara')
+    .reduce((sum, i) => sum + (i.cajas ?? 0), 0);
+
   const lotesEnStock = new Set(
     items.map((i) => i.lote_id).filter(Boolean)
   ).size;
@@ -224,6 +233,7 @@ export function InventarioPage() {
     const enCamara = items.filter((i) => i.origen === 'camara' && i.camara_id === camaraId);
     return {
       kilos: enCamara.reduce((sum, i) => sum + i.kilos, 0),
+      cajas: enCamara.reduce((sum, i) => sum + (i.cajas ?? 0), 0),
       lotes: Array.from(new Set(enCamara.map((i) => i.codigo_lote).filter((c) => c !== '-'))),
     };
   }
@@ -339,6 +349,18 @@ export function InventarioPage() {
     y += 8;
 
     pdf.setFont("helvetica", "bold");
+    pdf.text("Cajas en Racks:", 18, y);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(String(cajasEnRacks), 52, y);
+
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Cajas en Cámaras:", 112, y);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(String(cajasEnCamaras), 152, y);
+
+    y += 8;
+
+    pdf.setFont("helvetica", "bold");
     pdf.text("Lotes en Stock:", 18, y);
     pdf.setFont("helvetica", "normal");
     pdf.text(String(lotesEnStock), 52, y);
@@ -401,12 +423,13 @@ export function InventarioPage() {
     autoTable(pdf, {
       startY: y,
       margin: { left: 12, right: 12 },
-      head: [["Cámara", "Tipo", "Kilos", "Lotes"]],
+      head: [["Cámara", "Tipo", "Cajas", "Kilos", "Lotes"]],
       body: camaras.map((camara) => {
         const r = resumenCamara(camara.id);
         return [
           camara.nombre,
           tipoLabel(camara.tipo),
+          String(r.cajas),
           `${r.kilos.toLocaleString()} kg`,
           r.lotes.length > 0 ? r.lotes.join(", ") : "-",
         ];
@@ -475,8 +498,11 @@ export function InventarioPage() {
         </div>
         <div className="bg-white p-6 rounded-xl border border-gray-200">
           <p className="text-gray-600 mb-2">Total Cajas</p>
-          <p className="text-gray-900">{totalCajas}</p>
-          <p className="text-xs text-gray-500 mt-1">Solo cuenta lo que está en racks</p>
+          <p className="text-gray-900">{totalCajas.toLocaleString()}</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Racks: {cajasEnRacks.toLocaleString()} · Cámaras:{' '}
+            {cajasEnCamaras.toLocaleString()}
+          </p>
         </div>
         <div className="bg-white p-6 rounded-xl border border-gray-200">
           <p className="text-gray-600 mb-2">Lotes en Stock</p>
@@ -622,6 +648,10 @@ export function InventarioPage() {
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
+                    <span className="text-gray-600">Cajas:</span>
+                    <span className="text-gray-900">{r.cajas.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
                     <span className="text-gray-600">Kilos:</span>
                     <span className="text-gray-900">{r.kilos.toLocaleString()} kg</span>
                   </div>
@@ -664,7 +694,7 @@ export function InventarioPage() {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Cajas:</span>
-                    <span className="text-gray-900">{r.cajas}</span>
+                    <span className="text-gray-900">{r.cajas.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Kilos:</span>
