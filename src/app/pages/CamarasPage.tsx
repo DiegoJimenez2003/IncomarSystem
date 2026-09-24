@@ -12,13 +12,15 @@ const OPCIONES_CAMARA: { valor: FiltroCamara; etiqueta: string }[] = [
 
 // Cuenta lotes distintos (un mismo lote puede tener varios registros en la cámara)
 function contarLotesDistintos(items: any[]) {
-return new Set(
-items.map((i) => i.lotes?.codigo_lote).filter(Boolean)
-).size;
+return new Set(items.map((i) => i.lotes?.codigo_lote).filter(Boolean)).size;
 }
 
 function sumarKilos(items: any[]) {
 return items.reduce((sum, i) => sum + (Number(i.kilos) || 0), 0);
+}
+
+function sumarCajas(items: any[]) {
+return items.reduce((sum, i) => sum + (Number(i.cajas) || 0), 0);
 }
 
 export function CamarasPage() {
@@ -49,6 +51,7 @@ const { data, error } = await supabase
     .select(`
     id,
     kilos,
+    cajas,
     fecha_ingreso,
     camaras ( id, nombre, tipo ),
     lotes (
@@ -92,6 +95,7 @@ return {
     lotesPAC: contarLotesDistintos(pacTodos),
     lotesNoPAC: contarLotesDistintos(noPacTodos),
     kilosTotales: sumarKilos(detalle),
+    cajasTotales: sumarCajas(detalle),
 };
 }, [detalle]);
 
@@ -101,9 +105,7 @@ return {
 
 const especiesDisponibles = useMemo(() => {
 const nombres = new Set<string>(
-    detalle
-    .map((d) => d.lotes?.especies?.nombre)
-    .filter((n): n is string => Boolean(n))
+    detalle.map((d) => d.lotes?.especies?.nombre).filter((n): n is string => Boolean(n))
 );
 return Array.from(nombres).sort((a, b) => a.localeCompare(b));
 }, [detalle]);
@@ -130,8 +132,7 @@ return detalle.filter((d) => {
 });
 }, [detalle, busqueda, filtroCamara, filtroEspecie]);
 
-const hayFiltrosActivos =
-busqueda !== '' || filtroCamara !== 'todas' || filtroEspecie !== '';
+const hayFiltrosActivos = busqueda !== '' || filtroCamara !== 'todas' || filtroEspecie !== '';
 
 function limpiarFiltros() {
 setBusqueda('');
@@ -148,6 +149,7 @@ const noPac = detalleFiltrado.filter((d) => d.camaras?.tipo === 'NO_PAC');
 
 function renderColumna(titulo: string, items: any[], color: string) {
 const totalKilos = sumarKilos(items);
+const totalCajas = sumarCajas(items);
 const lotesDistintos = contarLotesDistintos(items);
 
 return (
@@ -158,8 +160,8 @@ return (
         <h2 className="text-gray-900 font-semibold">{titulo}</h2>
         </div>
         <span className="text-sm text-gray-600">
-        {lotesDistintos} {lotesDistintos === 1 ? 'lote' : 'lotes'} ·{' '}
-        {totalKilos.toLocaleString()} kg
+        {lotesDistintos} {lotesDistintos === 1 ? 'lote' : 'lotes'} · {totalKilos.toLocaleString()} kg
+        {totalCajas > 0 ? ` · ${totalCajas.toLocaleString()} cajas` : ''}
         </span>
     </div>
 
@@ -167,9 +169,7 @@ return (
         <div className="text-center py-10">
         <Package className="w-10 h-10 text-gray-300 mx-auto mb-2" />
         <p className="text-gray-500 text-sm">
-            {hayFiltrosActivos
-            ? 'Ningún lote coincide con los filtros'
-            : 'Sin lotes en esta cámara'}
+            {hayFiltrosActivos ? 'Ningún lote coincide con los filtros' : 'Sin lotes en esta cámara'}
         </p>
         </div>
     ) : (
@@ -180,21 +180,16 @@ return (
             className="p-4 border border-gray-200 rounded-lg flex items-center justify-between"
             >
             <div>
-                <p className="text-gray-900 font-medium">
-                {item.lotes?.codigo_lote}
-                </p>
-                <p className="text-sm text-gray-600">
-                {item.lotes?.especies?.nombre ?? '-'}
-                </p>
+                <p className="text-gray-900 font-medium">{item.lotes?.codigo_lote}</p>
+                <p className="text-sm text-gray-600">{item.lotes?.especies?.nombre ?? '-'}</p>
             </div>
 
             <div className="text-right">
                 <p className="text-gray-900">
                 {Number(item.kilos).toLocaleString()} kg
+                {item.cajas != null ? ` · ${item.cajas} cajas` : ''}
                 </p>
-                <p className="text-xs text-gray-500">
-                {tiempoTranscurrido(item.fecha_ingreso)} en cámara
-                </p>
+                <p className="text-xs text-gray-500">{tiempoTranscurrido(item.fecha_ingreso)} en cámara</p>
             </div>
             </div>
         ))}
@@ -208,9 +203,7 @@ return (
 <div className="space-y-6">
     <div>
     <h1 className="text-gray-900 mb-2">Cámaras</h1>
-    <p className="text-gray-600">
-        Producto congelado almacenado en cámaras PAC y NO PAC
-    </p>
+    <p className="text-gray-600">Producto congelado almacenado en cámaras PAC y NO PAC</p>
     </div>
 
     {loading ? (
@@ -220,36 +213,33 @@ return (
     ) : (
     <>
         {/* RESUMEN */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-white p-5 rounded-xl border border-gray-200">
             <div className="flex items-center gap-2 text-gray-600 mb-2">
             <Layers className="w-4 h-4" />
             <p>Lotes distintos en cámaras</p>
             </div>
-            <p className="text-gray-900 text-2xl font-semibold">
-            {resumen.lotesTotales}
-            </p>
+            <p className="text-gray-900 text-2xl font-semibold">{resumen.lotesTotales}</p>
         </div>
 
         <div className="bg-blue-50 p-5 rounded-xl border border-blue-100">
             <p className="text-gray-700 mb-2">Lotes en Cámara PAC</p>
-            <p className="text-blue-700 text-2xl font-semibold">
-            {resumen.lotesPAC}
-            </p>
+            <p className="text-blue-700 text-2xl font-semibold">{resumen.lotesPAC}</p>
         </div>
 
         <div className="bg-cyan-50 p-5 rounded-xl border border-cyan-100">
             <p className="text-gray-700 mb-2">Lotes en Cámara NO PAC</p>
-            <p className="text-cyan-700 text-2xl font-semibold">
-            {resumen.lotesNoPAC}
-            </p>
+            <p className="text-cyan-700 text-2xl font-semibold">{resumen.lotesNoPAC}</p>
         </div>
 
         <div className="bg-white p-5 rounded-xl border border-gray-200">
             <p className="text-gray-600 mb-2">Kilos totales</p>
-            <p className="text-gray-900 text-2xl font-semibold">
-            {resumen.kilosTotales.toLocaleString()} kg
-            </p>
+            <p className="text-gray-900 text-2xl font-semibold">{resumen.kilosTotales.toLocaleString()} kg</p>
+        </div>
+
+        <div className="bg-white p-5 rounded-xl border border-gray-200">
+            <p className="text-gray-600 mb-2">Cajas totales</p>
+            <p className="text-gray-900 text-2xl font-semibold">{resumen.cajasTotales.toLocaleString()}</p>
         </div>
         </div>
 
@@ -310,22 +300,15 @@ return (
             </div>
 
             <p className="text-sm text-gray-500">
-            Mostrando {contarLotesDistintos(detalleFiltrado)} de{' '}
-            {resumen.lotesTotales} lotes
+            Mostrando {contarLotesDistintos(detalleFiltrado)} de {resumen.lotesTotales} lotes
             </p>
         </div>
         </div>
 
         {/* CÁMARAS */}
-        <div
-        className={`grid grid-cols-1 gap-6 ${
-            filtroCamara === 'todas' ? 'md:grid-cols-2' : ''
-        }`}
-        >
-        {filtroCamara !== 'NO_PAC' &&
-            renderColumna('Cámara PAC', pac, 'text-blue-600')}
-        {filtroCamara !== 'PAC' &&
-            renderColumna('Cámara NO PAC', noPac, 'text-cyan-600')}
+        <div className={`grid grid-cols-1 gap-6 ${filtroCamara === 'todas' ? 'md:grid-cols-2' : ''}`}>
+        {filtroCamara !== 'NO_PAC' && renderColumna('Cámara PAC', pac, 'text-blue-600')}
+        {filtroCamara !== 'PAC' && renderColumna('Cámara NO PAC', noPac, 'text-cyan-600')}
         </div>
     </>
     )}

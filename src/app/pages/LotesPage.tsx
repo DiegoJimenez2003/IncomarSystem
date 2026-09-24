@@ -275,7 +275,7 @@ export function LotesPage() {
 
     const { data: camarasData, error: errCamaras } = await supabase
       .from('detalle_camara')
-      .select('lote_id, kilos, fecha_ingreso, camaras ( nombre, tipo )')
+      .select('lote_id, kilos, cajas, fecha_ingreso, camaras ( nombre, tipo )')
       .in('lote_id', ids);
 
     if (errCamaras) console.error(errCamaras);
@@ -330,7 +330,7 @@ export function LotesPage() {
 
       const { data: detalleCamarasData, error: errCamaras } = await supabase
         .from('detalle_camara')
-        .select('lote_id, kilos, fecha_ingreso, camaras ( nombre, tipo )')
+        .select('lote_id, kilos, cajas, fecha_ingreso, camaras ( nombre, tipo )')
         .in('lote_id', idsLineas);
       if (errCamaras) console.error(errCamaras);
 
@@ -472,11 +472,12 @@ export function LotesPage() {
           autoTable(pdf, {
             startY: y,
             margin: { left: 12, right: 12 },
-            head: [['Cámara', 'Tipo', 'Kilos', 'Ingreso']],
+            head: [['Cámara', 'Tipo', 'Kilos', 'Cajas', 'Ingreso']],
             body: camarasLinea.map((c: any) => [
               c.camaras?.nombre ?? '-',
               c.camaras?.tipo === 'NO_PAC' ? 'NO PAC' : (c.camaras?.tipo ?? '-'),
               `${(Number(c.kilos) || 0).toLocaleString()} kg`,
+              c.cajas != null ? String(c.cajas) : '-',
               c.fecha_ingreso ? formatDate(c.fecha_ingreso) : '-',
             ]),
             headStyles: { fillColor: AZUL },
@@ -585,18 +586,25 @@ export function LotesPage() {
 
       const { data: camaraTodos, error: errCamara } = await supabase
         .from('detalle_camara')
-        .select('lote_id, kilos, camaras ( nombre, tipo )');
+        .select('lote_id, kilos, cajas, camaras ( nombre, tipo )');
       if (errCamara) console.error(errCamara);
       const enCamara = camaraTodos ?? [];
 
-      const camaraPorLote = new Map<string, { kilos: number; kilosPAC: number; kilosNoPAC: number }>();
+      const camaraPorLote = new Map<
+        string,
+        { kilos: number; kilosPAC: number; kilosNoPAC: number; cajas: number }
+      >();
+      let cajasCamaraGeneral = 0;
       enCamara.forEach((c: any) => {
-        const actual = camaraPorLote.get(c.lote_id) ?? { kilos: 0, kilosPAC: 0, kilosNoPAC: 0 };
+        const actual = camaraPorLote.get(c.lote_id) ?? { kilos: 0, kilosPAC: 0, kilosNoPAC: 0, cajas: 0 };
         const kg = Number(c.kilos) || 0;
+        const cj = Number(c.cajas) || 0;
         actual.kilos += kg;
+        actual.cajas += cj;
         if (c.camaras?.tipo === 'PAC') actual.kilosPAC += kg;
         else if (c.camaras?.tipo === 'NO_PAC') actual.kilosNoPAC += kg;
         camaraPorLote.set(c.lote_id, actual);
+        cajasCamaraGeneral += cj;
       });
 
       const infoPorLote = new Map<string, { kilosAsignados: number; racks: string[]; bodegas: Set<string> }>();
@@ -703,7 +711,8 @@ export function LotesPage() {
         margin: { left: MARGIN, right: MARGIN },
         head: [[
           'Total Líneas', 'Total Kilos', 'Total Cajas', 'Kilos en Bodega PAC',
-          'Kilos en Bodega NO PAC', 'Kilos en Cámara PAC', 'Kilos en Cámara NO PAC', 'Kilos sin ubicación',
+          'Kilos en Bodega NO PAC', 'Kilos en Cámara PAC', 'Kilos en Cámara NO PAC',
+          'Cajas en Cámara', 'Kilos sin ubicación',
         ]],
         body: [[
           String(lineasTodas.length),
@@ -713,6 +722,7 @@ export function LotesPage() {
           `${kilosNoPACGeneral.toLocaleString()} kg`,
           `${kilosCamaraPACGeneral.toLocaleString()} kg`,
           `${kilosCamaraNoPACGeneral.toLocaleString()} kg`,
+          String(cajasCamaraGeneral),
           `${kilosSinAsignarGeneral.toLocaleString()} kg`,
         ]],
         headStyles: { fillColor: AZUL },
@@ -764,6 +774,7 @@ export function LotesPage() {
               const partesCamara: string[] = [];
               if (camara?.kilosPAC) partesCamara.push(`PAC ${camara.kilosPAC.toLocaleString()} kg`);
               if (camara?.kilosNoPAC) partesCamara.push(`NO PAC ${camara.kilosNoPAC.toLocaleString()} kg`);
+              if (camara?.cajas) partesCamara.push(`${camara.cajas} cajas`);
 
               return [
                 l.codigo_lote,
@@ -1331,7 +1342,10 @@ export function LotesPage() {
                             {detalle.camaras.map((c: any, i: number) => (
                               <li key={i} className="flex justify-between text-gray-700">
                                 <span>{c.camaras?.nombre ?? '-'} ({c.camaras?.tipo === 'NO_PAC' ? 'NO PAC' : c.camaras?.tipo})</span>
-                                <span>{(Number(c.kilos) || 0).toLocaleString()} kg</span>
+                                <span>
+                                  {(Number(c.kilos) || 0).toLocaleString()} kg
+                                  {c.cajas != null ? ` · ${c.cajas} cajas` : ''}
+                                </span>
                               </li>
                             ))}
                           </ul>
