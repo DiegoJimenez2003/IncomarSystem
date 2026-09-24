@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { X, Plus, Trash2, Ship, Search } from "lucide-react";
-import { supabase } from '../../../utils/supabase';
+import { supabase } from "../../../utils/supabase";
 import { useAuth } from "../../context/AuthContext";
+
+type UbicacionStock = "RACK" | "CAMARA" | "AMBOS";
 
 interface LoteDisponible {
 id: string;
 codigo_lote: string;
 kilos_disponibles: number;
 cajas_disponibles: number;
+ubicacion: UbicacionStock;
 }
 
 // Lote con lo que aún queda por embarcar (descontando lo ya agregado a la lista)
@@ -23,6 +26,7 @@ kilos: number;
 cajas: number;
 disponible_kg: number;
 disponible_cajas: number;
+ubicacion: UbicacionStock;
 }
 
 interface Props {
@@ -82,22 +86,79 @@ document
 }, [indiceResaltado, listaAbierta]);
 
 // =====================================================
-// LOTES CON KILOS ASIGNADOS A RACKS (inventario embarcable)
+// OBTENER ID DE USUARIO EN TABLA PUBLIC.USUARIOS
 // =====================================================
+async function obtenerUsuarioPublicoId(authId: string) {
+const { data, error } = await supabase
+    .from("usuarios")
+    .select("id")
+    .eq("auth_id", authId)
+    .maybeSingle();
 
+if (error || !data) {
+    console.error("No se encontró usuario en public.usuarios:", error);
+    return null;
+}
+return data.id;
+}
+
+// =====================================================
+// LOTES DISPONIBLES (Unificación Racks + Cámaras)
+// =====================================================
 async function cargarLotesDisponibles() {
 setCargandoLotes(true);
 
 try {
-    const { data: detalle, error: errorDetalle } = await supabase
+    // 1. Consultar Detalle Lote (Racks)
+    const { data: detalleRacks, error: errorRacks } = await supabase
     .from("detalle_lote")
     .select("lote_id, kilos, cajas");
 
-    if (errorDetalle) throw errorDetalle;
+    if (errorRacks) throw errorRacks;
 
-    const loteIds = [
-    ...new Set((detalle ?? []).map((d) => d.lote_id).filter(Boolean)),
-    ] as string[];
+    // 2. Consultar Detalle Cámara
+    const { data: detalleCamara, error: errorCamara } = await supabase
+    .from("detalle_camara")
+    .select("lote_id, kilos, cajas");
+
+    if (errorCamara) throw errorCamara;
+
+    const mapaLotes = new Map<
+    string,
+    { kilosRack: number; cajasRack: number; kilosCamara: number; cajasCamara: number }
+    >();
+
+    (detalleRacks ?? []).forEach((d) => {
+    if (!d.lote_id) return;
+    const act = mapaLotes.get(d.lote_id) ?? {
+        kilosRack: 0,
+        cajasRack: 0,
+        kilosCamara: 0,
+        cajasCamara: 0,
+    };
+    mapaLotes.set(d.lote_id, {
+        ...act,
+        kilosRack: act.kilosRack + Number(d.kilos ?? 0),
+        cajasRack: act.cajasRack + Number(d.cajas ?? 0),
+    });
+    });
+
+    (detalleCamara ?? []).forEach((d) => {
+    if (!d.lote_id) return;
+    const act = mapaLotes.get(d.lote_id) ?? {
+        kilosRack: 0,
+        cajasRack: 0,
+        kilosCamara: 0,
+        cajasCamara: 0,
+    };
+    mapaLotes.set(d.lote_id, {
+        ...act,
+        kilosCamara: act.kilosCamara + Number(d.kilos ?? 0),
+        cajasCamara: act.cajasCamara + Number(d.cajas ?? 0),
+    });
+    });
+
+    const loteIds = Array.from(mapaLotes.keys());
 
     if (loteIds.length === 0) {
     setLotesDisponibles([]);
@@ -111,25 +172,30 @@ try {
 
     if (errorLotes) throw errorLotes;
 
-    const disponiblesMap = new Map<string, { kilos: number; cajas: number }>();
-
-    (detalle ?? []).forEach((d) => {
-    if (!d.lote_id) return;
-    const actual = disponiblesMap.get(d.lote_id) ?? { kilos: 0, cajas: 0 };
-    disponiblesMap.set(d.lote_id, {
-        kilos: actual.kilos + Number(d.kilos ?? 0),
-        cajas: actual.cajas + Number(d.cajas ?? 0),
-    });
-    });
-
     const resultado: LoteDisponible[] = (lotes ?? [])
     .map((l) => {
-        const disp = disponiblesMap.get(l.id) ?? { kilos: 0, cajas: 0 };
+        const info = mapaLotes.get(l.id) ?? {
+        kilosRack: 0,
+        cajasRack: 0,
+        kilosCamara: 0,
+        cajasCamara: 0,
+        };
+        const kgTotal = redondear(info.kilosRack + info.kilosCamara);
+        const cjTotal = info.cajasRack + info.cajasCamara;
+
+        let ubicacion: UbicacionStock = "RACK";
+        if (info.kilosRack > 0 && info.kilosCamara > 0) {
+        ubicacion = "AMBOS";
+        } else if (info.kilosCamara > 0) {
+        ubicacion = "CAMARA";
+        }
+
         return {
         id: l.id,
         codigo_lote: l.codigo_lote,
-        kilos_disponibles: disp.kilos,
-        cajas_disponibles: disp.cajas,
+        kilos_disponibles: kgTotal,
+        cajas_disponibles: cjTotal,
+        ubicacion,
         };
     })
     .filter((l) => l.kilos_disponibles > 0)
@@ -147,8 +213,6 @@ try {
 // =====================================================
 // BUSCADOR DE LOTES
 // =====================================================
-
-// Lotes con lo que todavía se puede embarcar (descontando lo ya agregado)
 const lotesConRestante = useMemo<LoteConRestante[]>(() => {
 return lotesDisponibles
     .map((l) => {
@@ -165,7 +229,6 @@ return lotesDisponibles
     .filter((l) => l.kilos_restantes > 0);
 }, [lotesDisponibles, items]);
 
-// Lista filtrada por lo que se escribe en el buscador
 const opciones = useMemo(() => {
 const q = busquedaLote.trim().toLowerCase();
 if (!q) return lotesConRestante;
@@ -188,7 +251,6 @@ setLoteSeleccionado(l.id);
 setBusquedaLote("");
 setListaAbierta(false);
 
-// Se completa con lo que queda del lote; el usuario puede editarlo
 setKilosInput(String(l.kilos_restantes));
 setCajasInput(l.cajas_restantes > 0 ? String(l.cajas_restantes) : "");
 }
@@ -211,13 +273,10 @@ if (e.key === "ArrowDown") {
 }
 }
 
-// Al cambiar los kilos, las cajas se recalculan proporcionalmente
-// al stock del lote (siguen siendo editables a mano).
 function cambiarKilos(valor: string) {
 setKilosInput(valor);
 
 if (!loteSel) return;
-
 const kilos = Number(valor);
 
 if (valor === "" || !Number.isFinite(kilos) || kilos <= 0) {
@@ -234,9 +293,8 @@ setCajasInput(String(Math.min(cajas, loteSel.cajas_restantes)));
 }
 
 // =====================================================
-// AGREGAR ITEM AL EMBARQUE (en memoria, aún no se guarda)
+// AGREGAR ITEM AL EMBARQUE
 // =====================================================
-
 function agregarItem() {
 const lote = lotesDisponibles.find((l) => l.id === loteSeleccionado);
 if (!lote) {
@@ -260,9 +318,9 @@ const yaUsadoCajas = items
     .filter((i) => i.lote_id === lote.id)
     .reduce((sum, i) => sum + i.cajas, 0);
 
-if (kilos > lote.kilos_disponibles - yaUsado) {
+if (kilos > redondear(lote.kilos_disponibles - yaUsado)) {
     alert(
-    `Solo quedan ${lote.kilos_disponibles - yaUsado} kg disponibles de este lote`
+    `Solo quedan ${redondear(lote.kilos_disponibles - yaUsado)} kg disponibles de este lote`
     );
     return;
 }
@@ -283,6 +341,7 @@ setItems((prev) => [
     cajas,
     disponible_kg: lote.kilos_disponibles,
     disponible_cajas: lote.cajas_disponibles,
+    ubicacion: lote.ubicacion,
     },
 ]);
 
@@ -298,92 +357,157 @@ setItems((prev) => prev.filter((_, i) => i !== index));
 }
 
 // =====================================================
-// DESCONTAR DE RACKS (FIFO por fecha_ingreso) Y GENERAR
-// UN MOVIMIENTO DE SALIDA POR CADA RACK AFECTADO
+// DESCUENTO SECUENCIAL: RACKS PRIMERO, LUEGO CÁMARAS
 // =====================================================
-
-async function descontarDeRacksYRegistrarMovimientos(
+async function descontarStockYRegistrarMovimientos(
 loteId: string,
 kilosADescontar: number,
 cajasADescontar: number,
-embarqueId: string,
 codigoLote: string,
 codigoEmbarque: string,
 tipoSalidaId: string,
-usuarioDbId: string | null
+usuarioPublicoId: string | null
 ) {
-const { data: asignaciones, error } = await supabase
-    .from("detalle_lote")
-    .select("id, rack_id, kilos, cajas, fecha_ingreso")
-    .eq("lote_id", loteId)
-    .order("fecha_ingreso", { ascending: true });
-
-if (error) {
-    console.error("Error obteniendo asignaciones de rack:", error);
-    throw error;
-}
-
 let kilosRestantes = kilosADescontar;
 let cajasRestantes = cajasADescontar;
 
-for (const asignacion of asignaciones ?? []) {
+// 1. DESCUENTO DE RACKS
+if (kilosRestantes > 0) {
+    const { data: asignacionesRack, error: errorRack } = await supabase
+    .from("detalle_lote")
+    .select("id, rack_id, kilos, cajas, fecha_ingreso")
+    .eq("lote_id", loteId)
+    .gt("kilos", 0)
+    .order("fecha_ingreso", { ascending: true });
+
+    if (errorRack) throw errorRack;
+
+    for (const asignacion of asignacionesRack ?? []) {
     if (kilosRestantes <= 0) break;
 
-    const kilosDisponiblesFila = Number(asignacion.kilos ?? 0);
-    const cajasDisponiblesFila = Number(asignacion.cajas ?? 0);
-    if (kilosDisponiblesFila <= 0) continue;
+    const kilosFila = Number(asignacion.kilos ?? 0);
+    const cajasFila = Number(asignacion.cajas ?? 0);
+    if (kilosFila <= 0) continue;
 
-    const kilosATomar = Math.min(kilosDisponiblesFila, kilosRestantes);
-    const cajasATomar = Math.min(cajasDisponiblesFila, cajasRestantes);
+    const kilosATomar = Math.min(kilosFila, kilosRestantes);
+    
+    let cajasATomar = 0;
+    if (cajasADescontar > 0) {
+        cajasATomar = Math.min(cajasFila, cajasRestantes);
+    } else if (cajasFila > 0) {
+        cajasATomar = Math.round((kilosATomar / kilosFila) * cajasFila);
+    }
 
-    // Actualizar o eliminar la fila de detalle_lote
-    const kilosNuevos = kilosDisponiblesFila - kilosATomar;
-    const cajasNuevas = cajasDisponiblesFila - cajasATomar;
+    const kilosNuevos = redondear(kilosFila - kilosATomar);
+    const cajasNuevas = Math.max(0, cajasFila - cajasATomar);
 
     if (kilosNuevos <= 0) {
-    const { error: errorDelete } = await supabase
+        const { error: errorDel } = await supabase
         .from("detalle_lote")
         .delete()
         .eq("id", asignacion.id);
-    if (errorDelete) throw errorDelete;
+        if (errorDel) throw errorDel;
     } else {
-    const { error: errorUpdate } = await supabase
+        const { error: errorUpd } = await supabase
         .from("detalle_lote")
         .update({ kilos: kilosNuevos, cajas: cajasNuevas })
         .eq("id", asignacion.id);
-    if (errorUpdate) throw errorUpdate;
+        if (errorUpd) throw errorUpd;
     }
 
-    // Registrar movimiento de salida por este rack
-    const { error: errorMovimiento } = await supabase
-    .from("movimientos")
-    .insert({
+    // Registro de movimiento en Racks
+    const { error: errorMov } = await supabase
+        .from("movimientos")
+        .insert({
         lote_id: loteId,
         tipo_movimiento_id: tipoSalidaId,
         rack_id: asignacion.rack_id,
-        usuario_id: usuarioDbId,
+        usuario_id: usuarioPublicoId,
         cantidad_kg: kilosATomar,
         cantidad_cajas: cajasATomar || null,
-        descripcion: `Embarque ${codigoEmbarque} — salida del lote ${codigoLote}`,
-    });
+        descripcion: `Embarque ${codigoEmbarque} — salida (Rack) del lote ${codigoLote}`,
+        });
 
-    if (errorMovimiento) throw errorMovimiento;
+    if (errorMov) throw errorMov;
 
-    kilosRestantes -= kilosATomar;
-    cajasRestantes -= cajasATomar;
+    kilosRestantes = redondear(kilosRestantes - kilosATomar);
+    cajasRestantes = Math.max(0, cajasRestantes - cajasATomar);
+    }
+}
+
+// 2. DESCUENTO DE CÁMARAS (Si aún faltan kilos por descontar)
+if (kilosRestantes > 0) {
+    const { data: asignacionesCamara, error: errorCamara } = await supabase
+    .from("detalle_camara")
+    .select("id, camara_id, kilos, cajas, fecha_ingreso")
+    .eq("lote_id", loteId)
+    .gt("kilos", 0)
+    .order("fecha_ingreso", { ascending: true });
+
+    if (errorCamara) throw errorCamara;
+
+    for (const asignacion of asignacionesCamara ?? []) {
+    if (kilosRestantes <= 0) break;
+
+    const kilosFila = Number(asignacion.kilos ?? 0);
+    const cajasFila = Number(asignacion.cajas ?? 0);
+    if (kilosFila <= 0) continue;
+
+    const kilosATomar = Math.min(kilosFila, kilosRestantes);
+
+    let cajasATomar = 0;
+    if (cajasADescontar > 0) {
+        cajasATomar = Math.min(cajasFila, cajasRestantes);
+    } else if (cajasFila > 0) {
+        cajasATomar = Math.round((kilosATomar / kilosFila) * cajasFila);
+    }
+
+    const kilosNuevos = redondear(kilosFila - kilosATomar);
+    const cajasNuevas = Math.max(0, cajasFila - cajasATomar);
+
+    if (kilosNuevos <= 0) {
+        const { error: errorDel } = await supabase
+        .from("detalle_camara")
+        .delete()
+        .eq("id", asignacion.id);
+        if (errorDel) throw errorDel;
+    } else {
+        const { error: errorUpd } = await supabase
+        .from("detalle_camara")
+        .update({ kilos: kilosNuevos, cajas: cajasNuevas })
+        .eq("id", asignacion.id);
+        if (errorUpd) throw errorUpd;
+    }
+
+    // Registro de movimiento en Cámaras
+    const { error: errorMov } = await supabase
+        .from("movimientos")
+        .insert({
+        lote_id: loteId,
+        tipo_movimiento_id: tipoSalidaId,
+        usuario_id: usuarioPublicoId,
+        cantidad_kg: kilosATomar,
+        cantidad_cajas: cajasATomar || null,
+        descripcion: `Embarque ${codigoEmbarque} — salida (Cámara) del lote ${codigoLote}`,
+        });
+
+    if (errorMov) throw errorMov;
+
+    kilosRestantes = redondear(kilosRestantes - kilosATomar);
+    cajasRestantes = Math.max(0, cajasRestantes - cajasATomar);
+    }
 }
 
 if (kilosRestantes > 0) {
     console.warn(
-    `Quedaron ${kilosRestantes} kg del lote ${codigoLote} sin poder descontarse de ningún rack (inconsistencia de datos).`
+    `Quedaron ${kilosRestantes} kg del lote ${codigoLote} sin poder descontarse de racks ni cámaras.`
     );
 }
 }
 
 // =====================================================
-// GUARDAR EMBARQUE COMPLETO
+// GUARDAR EMBARQUE
 // =====================================================
-
 async function guardarEmbarque() {
 if (!cliente.trim()) {
     alert("Ingrese el cliente");
@@ -398,9 +522,11 @@ if (items.length === 0) {
 try {
     setGuardando(true);
 
-    const usuarioDbId = user?.id ?? null;
+    let usuarioDbId: string | null = null;
+    if (user?.id) {
+    usuarioDbId = await obtenerUsuarioPublicoId(user.id);
+    }
 
-    // Estado inicial: "preparando"
     const { data: estadoInicial, error: errorEstado } = await supabase
     .from("estados_embarque")
     .select("id")
@@ -409,7 +535,6 @@ try {
 
     if (errorEstado) throw errorEstado;
 
-    // Código de embarque simple y único
     const codigoEmbarque = `EMB-${Date.now()}`;
 
     const { data: embarque, error: errorEmbarque } = await supabase
@@ -429,7 +554,6 @@ try {
 
     if (errorEmbarque) throw errorEmbarque;
 
-    // Tipo de movimiento "salida"
     const { data: tipoSalida, error: errorTipo } = await supabase
     .from("tipos_movimiento")
     .select("id")
@@ -438,7 +562,6 @@ try {
 
     if (errorTipo) throw errorTipo;
 
-    // Insertar embarque_detalle + descontar racks + movimientos, por cada item
     for (const item of items) {
     const { error: errorDetalle } = await supabase
         .from("embarque_detalle")
@@ -451,11 +574,10 @@ try {
 
     if (errorDetalle) throw errorDetalle;
 
-    await descontarDeRacksYRegistrarMovimientos(
+    await descontarStockYRegistrarMovimientos(
         item.lote_id,
         item.kilos,
         item.cajas,
-        embarque.id,
         item.codigo_lote,
         codigoEmbarque,
         tipoSalida.id,
@@ -470,6 +592,30 @@ try {
     alert("No se pudo registrar el embarque");
 } finally {
     setGuardando(false);
+}
+}
+
+// Renderizador de badge de ubicación
+function renderUbicacionBadge(ubicacion: UbicacionStock) {
+switch (ubicacion) {
+    case "RACK":
+    return (
+        <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-800 rounded">
+        RACK
+        </span>
+    );
+    case "CAMARA":
+    return (
+        <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-800 rounded">
+        CÁMARA
+        </span>
+    );
+    case "AMBOS":
+    return (
+        <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-purple-100 text-purple-800 rounded">
+        RACK + CÁMARA
+        </span>
+    );
 }
 }
 
@@ -606,9 +752,12 @@ return (
                         idx === indiceResaltado ? "bg-blue-50" : ""
                         }`}
                     >
+                        <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-gray-900">
-                        {l.codigo_lote}
+                            {l.codigo_lote}
                         </span>
+                        {renderUbicacionBadge(l.ubicacion)}
+                        </div>
                         <span className="text-xs text-gray-500 whitespace-nowrap">
                         {l.kilos_restantes.toLocaleString()} kg ·{" "}
                         {l.cajas_restantes.toLocaleString()} cajas
@@ -638,12 +787,14 @@ return (
         </div>
 
         {loteSel && (
-            <p className="text-xs text-gray-500">
-            Disponible en {loteSel.codigo_lote}:{" "}
-            {loteSel.kilos_restantes.toLocaleString()} kg ·{" "}
-            {loteSel.cajas_restantes.toLocaleString()} cajas. Las cajas se
-            calculan según los kilos, pero puedes editarlas.
-            </p>
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+            <span>
+                Disponible en {loteSel.codigo_lote}:{" "}
+                {loteSel.kilos_restantes.toLocaleString()} kg ·{" "}
+                {loteSel.cajas_restantes.toLocaleString()} cajas.
+            </span>
+            {renderUbicacionBadge(loteSel.ubicacion)}
+            </div>
         )}
 
         <button
@@ -664,7 +815,12 @@ return (
                 <div className="flex items-center gap-2">
                     <Ship className="w-4 h-4 text-blue-600" />
                     <div>
-                    <p className="text-sm text-gray-900">{item.codigo_lote}</p>
+                    <div className="flex items-center gap-2">
+                        <p className="text-sm text-gray-900 font-medium">
+                        {item.codigo_lote}
+                        </p>
+                        {renderUbicacionBadge(item.ubicacion)}
+                    </div>
                     <p className="text-xs text-gray-500">
                         {item.kilos.toLocaleString()} kg
                         {item.cajas ? ` · ${item.cajas} cajas` : ""}
